@@ -14,6 +14,15 @@ public enum MenuBarMetric: String, CaseIterable, Identifiable, Sendable {
         case .none: "Icon only"
         }
     }
+    /// SF Symbol shown beside the title in the options menu.
+    public var symbol: String {
+        switch self {
+        case .battery: "battery.75percent"
+        case .load: "powerplug"
+        case .solar: "sun.max"
+        case .none: "menubar.rectangle"
+        }
+    }
 }
 
 /// Holds the latest reading and the user's display choices, and polls the provider.
@@ -22,6 +31,9 @@ public final class AppStore: ObservableObject {
     @Published public private(set) var snapshot: EnergySnapshot?
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var busy = false
+    /// True when the account file is missing or incomplete, or the cloud refused the login.
+    @Published public private(set) var signInRequired = false
+    @Published public private(set) var signInError: String?
     @Published public private(set) var today: DayCurve?
     @Published public private(set) var todayLoading = false
     @Published public private(set) var todayError: String?
@@ -38,7 +50,6 @@ public final class AppStore: ObservableObject {
     @Published public var showDetails = false
     @Published public var panelOpen = false { didSet { if panelOpen && !oldValue { panelOpened() } } }
 
-    public let isDemo: Bool
     /// False when the illustration was forced for this run (`--style`), so that a recording
     /// does not overwrite the choice saved from the options menu.
     private let remembersHeroStyle: Bool
@@ -52,23 +63,14 @@ public final class AppStore: ObservableObject {
 
     private enum Keys { static let hero = "heroStyle", metric = "menuBarMetric", animate = "animateIcon" }
 
-    public init(provider: SnapshotProviding, isDemo: Bool = false, defaults: UserDefaults = .standard,
+    public init(provider: SnapshotProviding, defaults: UserDefaults = .standard,
                 heroStyle forced: HeroStyle? = nil) {
         self.provider = provider
-        self.isDemo = isDemo
         self.defaults = defaults
         remembersHeroStyle = forced == nil
         heroStyle = forced ?? HeroStyle(rawValue: defaults.string(forKey: Keys.hero) ?? "") ?? HeroStyle.preferred
         metric = MenuBarMetric(rawValue: defaults.string(forKey: Keys.metric) ?? "") ?? .battery
         animateIcon = defaults.object(forKey: Keys.animate) as? Bool ?? true
-    }
-
-    /// A store frozen on one reading, for previews and lab renders. It never polls.
-    public convenience init(preview snapshot: EnergySnapshot?, today: DayCurve? = nil, error: String? = nil) {
-        self.init(provider: StaticProvider(snapshot: snapshot, today: today), isDemo: true, defaults: UserDefaults(suiteName: "InverterBar.preview") ?? .standard)
-        self.snapshot = snapshot
-        self.today = today
-        self.errorMessage = error
     }
 
     public func start() {
@@ -79,7 +81,7 @@ public final class AppStore: ObservableObject {
                 // Sleep in short steps so that opening or closing the panel changes the cadence
                 // straight away instead of after the current wait.
                 while !Task.isCancelled, let self, Date().timeIntervalSince(self.lastAttempt) < self.pollInterval {
-                    try? await Task.sleep(for: .seconds(self.isDemo ? 1 : 5))
+                    try? await Task.sleep(for: .seconds(5))
                 }
                 if self == nil { return }
             }
@@ -90,7 +92,6 @@ public final class AppStore: ObservableObject {
     /// After a failure the next try comes sooner once (a Mac that has just woken often has no
     /// network for a few seconds), then the normal cadence resumes.
     private var pollInterval: Double {
-        if isDemo { return 6 }
         if consecutiveFailures == 1 { return 15 }
         return panelOpen ? 60 : 150
     }
@@ -105,12 +106,57 @@ public final class AppStore: ObservableObject {
             let isNew = reading != snapshot
             snapshot = reading
             errorMessage = nil
+            signInRequired = false
             consecutiveFailures = 0
             if isNew { startIconBurst() }
             if panelOpen && showToday { await loadToday() }
         } catch {
             errorMessage = Self.describe(error)
+            signInRequired = Self.needsSignIn(error)
             consecutiveFailures += 1
+        }
+    }
+
+    /// Saves the account, then reads the inverter with it, trying each app profile. A failure is left in `signInError`.
+    public func signIn(user: String, password: String) async {
+        signInError = nil
+        // The three phone apps share one login but sign it with different app identities, and the
+        // cloud answers a wrong identity the same way as a wrong password. So try each in turn; the
+        // first one the cloud accepts is saved. Only a refused login moves on to the next.
+        for profile in CloudProfile.all {
+            do {
+                try InverterConfig.save(app: profile.name, user: user, password: password)
+            } catch {
+                signInError = "Could not save the account: \(error.localizedDescription)"
+                return
+            }
+            await provider.reset()
+            snapshot = nil
+            while busy { try? await Task.sleep(for: .milliseconds(100)) }
+            await refresh(force: true)
+            if snapshot != nil || !signInRequired { break }
+        }
+        if signInRequired || snapshot == nil { signInError = errorMessage ?? "Could not read the inverter." }
+    }
+
+    /// Forgets the account and its session and goes back to the sign-in form.
+    public func signOut() async {
+        do { try InverterConfig.signOut() } catch {
+            errorMessage = "Could not remove the account: \(error.localizedDescription)"
+            return
+        }
+        await provider.reset()
+        while busy { try? await Task.sleep(for: .milliseconds(100)) }
+        snapshot = nil; today = nil; todayError = nil; errorMessage = nil
+        signInError = nil; signInRequired = true
+        stopIconBurst()
+    }
+
+    private static func needsSignIn(_ error: Error) -> Bool {
+        if error is InverterConfigError { return true }
+        switch error as? DessMonitorError {
+        case .missingCredentials, .loginRejected: return true
+        default: return false
         }
     }
 
@@ -168,7 +214,6 @@ public final class AppStore: ObservableObject {
     /// logger has been silent for 15 minutes, or nothing has been fetched for 10.
     public var readingIsStale: Bool {
         guard let snapshot else { return true }
-        if isDemo { return false }
         return snapshot.isStale() || Date().timeIntervalSince(snapshot.fetchedAt) > 600
     }
 
@@ -214,54 +259,5 @@ public final class AppStore: ObservableObject {
         iconTimer?.invalidate()
         iconTimer = nil
         iconPhase = 0
-    }
-}
-
-private struct StaticProvider: SnapshotProviding {
-    let snapshot: EnergySnapshot?
-    let today: DayCurve?
-    func fetchSnapshot(force: Bool) async throws -> EnergySnapshot { snapshot ?? EnergySnapshot() }
-    func fetchToday() async throws -> DayCurve { today ?? DayCurve(day: "", dayStart: Date()) }
-}
-
-/// Walks through the fixed scenarios so every animation and transition can be seen without the inverter.
-public actor DemoProvider: SnapshotProviding {
-    private var index = -1
-    public init() {}
-
-    public func fetchSnapshot(force: Bool) async throws -> EnergySnapshot {
-        let scenarios = HeroScenario.all.filter { $0.snapshot != nil }
-        index = (index + 1) % scenarios.count
-        var reading = scenarios[index].snapshot ?? EnergySnapshot()
-        reading.fetchedAt = Date()
-        reading.deviceTime = Date().addingTimeInterval(-45)
-        return reading
-    }
-
-    public func fetchToday() async throws -> DayCurve { Self.sampleDay(until: Date()) }
-
-    /// A plausible clear day: a solar bell around 12:30 and a daytime-heavy load.
-    public static func sampleDay(until end: Date, calendar: Calendar = .current) -> DayCurve {
-        let start = calendar.startOfDay(for: end)
-        var points: [DayCurvePoint] = []
-        var t = start
-        var step = 0
-        while t <= end {
-            let hour = t.timeIntervalSince(start) / 3600
-            let sun = max(0, sin((hour - 6.2) / 12.4 * .pi))
-            // Slow drift (passing cloud, appliances cycling) rather than sample-to-sample noise.
-            let drift = 0.5 + 0.5 * sin(Double(step) * 0.11) * cos(Double(step) * 0.037)
-            let pv = hour > 6.2 && hour < 18.6 ? 4200 * pow(sun, 1.4) * (0.86 + 0.14 * drift) : 0
-            let load = 650 + 1500 * max(0, sin((hour - 8) / 11 * .pi)) + 320 * drift + (hour > 19 && hour < 23 ? 500 : 0)
-            let battery = min(100, max(18, 52 + 40 * sin((hour - 9) / 14 * .pi)))
-            points.append(DayCurvePoint(time: t, pvW: pv, loadW: load, batteryPercent: battery))
-            t = t.addingTimeInterval(300)
-            step += 1
-        }
-        let name = DateFormatter()
-        name.calendar = calendar
-        name.timeZone = calendar.timeZone
-        name.dateFormat = "yyyy-MM-dd"
-        return DayCurve(day: name.string(from: start), dayStart: start, points: points, fetchedAt: end)
     }
 }

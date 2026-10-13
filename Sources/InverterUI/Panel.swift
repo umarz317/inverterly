@@ -5,13 +5,10 @@ import InverterCore
 /// The menu bar panel: header, the live card (hero, load, tiles) and two sections that open in place.
 public struct InverterPanel: View {
     @ObservedObject private var store: AppStore
-    /// Lab renders pass a fixed frame and instant; the live app leaves this nil and animates.
-    private let fixedHero: (frame: HeroFrame, now: Date)?
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
 
-    public init(store: AppStore, fixedHero: (frame: HeroFrame, now: Date)? = nil) {
+    public init(store: AppStore) {
         self.store = store
-        self.fixedHero = fixedHero
     }
 
     public var body: some View {
@@ -24,10 +21,12 @@ public struct InverterPanel: View {
                 if let warning = snapshot.activeWarning {
                     Banner(symbol: "bolt.trianglebadge.exclamationmark", text: "Inverter warning: \(warning)", tint: .alertAccent)
                 }
-                if snapshot.isStale(now: clock) {
+                if snapshot.isStale() {
                     Banner(symbol: "clock.badge.exclamationmark", text: staleText(snapshot), tint: .solarAccent)
                 }
                 card(snapshot)
+            } else if store.signInRequired {
+                SignInView(store: store)
             } else if let message = store.errorMessage {
                 FailedView(message: message) { Task { await store.refresh(force: true) } }
             } else {
@@ -37,10 +36,6 @@ public struct InverterPanel: View {
         .padding(14)
         .frame(width: 380)
     }
-
-    /// Lab renders go through ImageRenderer, which cannot draw AppKit-backed views such as the options menu.
-    private var isLab: Bool { fixedHero != nil }
-    private var clock: Date { fixedHero?.now ?? Date() }
 
     // MARK: Header
 
@@ -58,24 +53,26 @@ public struct InverterPanel: View {
             .help("Refresh now")
             .disabled(store.busy)
 
-            if isLab {
-                Image(systemName: "ellipsis").font(.system(size: 13, weight: .medium)).frame(width: 26, height: 26)
-            } else {
-                Menu {
-                    Picker("Illustration", selection: $store.heroStyle) {
-                        ForEach(HeroStyle.selectable) { Text($0.title).tag($0) }
-                    }
-                    Picker("Menu bar shows", selection: $store.metric) {
-                        ForEach(MenuBarMetric.allCases) { Text($0.title).tag($0) }
-                    }
-                    Toggle("Animate menu bar icon", isOn: $store.animateIcon)
+            Menu {
+                    Picker(selection: $store.heroStyle) {
+                        ForEach(HeroStyle.selectable) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                    } label: { Label("Illustration", systemImage: "photo") }
+                    Picker(selection: $store.metric) {
+                        ForEach(MenuBarMetric.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                    } label: { Label("Menu bar shows", systemImage: "menubar.rectangle") }
+                    Toggle(isOn: $store.animateIcon) { Label("Animate menu bar icon", systemImage: "sparkles") }
                     if LaunchAtLogin.isAvailable {
-                        Toggle("Open at login", isOn: Binding(
+                        Toggle(isOn: Binding(
                             get: { launchAtLogin },
-                            set: { LaunchAtLogin.set($0); launchAtLogin = LaunchAtLogin.isEnabled }))
+                            set: { LaunchAtLogin.set($0); launchAtLogin = LaunchAtLogin.isEnabled })) {
+                            Label("Open at login", systemImage: "power")
+                        }
                     }
                     Divider()
-                    Button("Quit InverterBar") { NSApplication.shared.terminate(nil) }
+                    if !store.signInRequired {
+                        Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { Task { await store.signOut() } }
+                    }
+                    Button("Quit InverterBar", systemImage: "xmark.rectangle") { NSApplication.shared.terminate(nil) }
                         .keyboardShortcut("q")
                 } label: {
                     Image(systemName: "ellipsis").font(.system(size: 13, weight: .medium))
@@ -85,14 +82,12 @@ public struct InverterPanel: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .help("Options")
-            }
         }
     }
 
     private var subtitle: String {
         guard let snapshot = store.snapshot else { return store.errorMessage == nil ? "Connecting…" : "Not connected" }
         var parts: [String] = []
-        if store.isDemo { parts.append("Demo") }
         if let rated = snapshot.ratedPowerW, rated > 0 {
             parts.append("\(PowerFormat.kilowatts(rated)) inverter")
         }
@@ -152,12 +147,8 @@ public struct InverterPanel: View {
 
     @ViewBuilder
     private func hero(_ snapshot: EnergySnapshot) -> some View {
-        if let fixedHero {
-            store.heroStyle.view(frame: fixedHero.frame, now: fixedHero.now)
-        } else {
-            HeroHost(snapshot: snapshot, active: store.panelOpen) { frame, now in
-                store.heroStyle.view(frame: frame, now: now)
-            }
+        HeroHost(snapshot: snapshot, active: store.panelOpen) { frame, now in
+            store.heroStyle.view(frame: frame, now: now)
         }
     }
 

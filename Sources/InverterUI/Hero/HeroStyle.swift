@@ -23,6 +23,15 @@ public enum HeroStyle: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// SF Symbol shown beside the title in the options menu.
+    public var symbol: String {
+        switch self {
+        case .device: "bolt.batteryblock"
+        case .flow: "point.3.connected.trianglepath.dotted"
+        case .scene: "house"
+        }
+    }
+
     /// Height the hero wants inside the 380 pt panel.
     public var height: CGFloat {
         switch self {

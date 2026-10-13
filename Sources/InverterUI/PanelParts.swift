@@ -109,6 +109,71 @@ struct ReadingView: View {
     }
 }
 
+/// Asks for the inverter cloud account and saves it to the account file.
+struct SignInView: View {
+    @ObservedObject var store: AppStore
+    @State private var user = ""
+    @State private var password = ""
+    @State private var working = false
+
+    private var ready: Bool { !user.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && !working }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            logo
+            VStack(spacing: 4) {
+                Text("Sign in").font(.system(size: 17, weight: .semibold))
+                Text("Use the same username and password as in your inverter's phone app.")
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(spacing: 8) {
+                field(TextField("Username", text: $user))
+                field(SecureField("Password", text: $password).onSubmit(submit))
+            }
+            if let error = store.signInError {
+                Text(error).font(.system(size: 11)).foregroundStyle(Color.alertAccent)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            }
+            Button(action: submit) {
+                Text(working ? "Signing in…" : "Sign in").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).controlSize(.large)
+            .disabled(!ready)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 22).padding(.vertical, 26)
+        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    /// The app icon when running from the built app; a sun glyph when there is none (swift run, lab renders).
+    @ViewBuilder private var logo: some View {
+        if let icon = NSImage(named: "AppIcon") {
+            Image(nsImage: icon).resizable().frame(width: 64, height: 64)
+                .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+        } else {
+            Image(systemName: "sun.max.fill").font(.system(size: 30)).foregroundStyle(Color.solarAccent)
+                .frame(width: 64, height: 64)
+                .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        }
+    }
+
+    private func field(_ view: some View) -> some View {
+        view.textFieldStyle(.roundedBorder).controlSize(.large).font(.system(size: 13))
+    }
+
+    private func submit() {
+        guard ready else { return }
+        working = true
+        let account = (user.trimmingCharacters(in: .whitespaces), password)
+        Task {
+            await store.signIn(user: account.0, password: account.1)
+            working = false
+            password = ""
+        }
+    }
+}
+
 struct FailedView: View {
     let message: String
     let retry: () -> Void

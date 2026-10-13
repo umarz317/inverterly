@@ -31,7 +31,7 @@ public final class StatusItemController: NSObject {
     private var closedByOutsideClickAt = Date.distantPast
 
     public private(set) var isOpen = false
-    /// When true, clicking elsewhere does not close the panel. Used by `--open` and `--tour`,
+    /// When true, clicking elsewhere does not close the panel. Used by `--open`,
     /// where the panel has to stay up while something else is being used or recorded.
     public var staysOpen = false
 
@@ -130,6 +130,7 @@ public final class StatusItemController: NSObject {
             panel.setFrame(frame, display: true)
             panel.orderFrontRegardless()
             panel.makeKey()
+            panel.invalidateShadow()
         } else {
             // Drop in: start a few points high and transparent, settle into place.
             panel.alphaValue = 0
@@ -141,7 +142,7 @@ public final class StatusItemController: NSObject {
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 panel.animator().alphaValue = 1
                 panel.animator().setFrame(frame, display: true)
-            }
+            } completionHandler: { panel.invalidateShadow() }
         }
         // The press that opened the panel un-highlights the button on mouse-up, so set it again after.
         DispatchQueue.main.async { [weak self] in
@@ -191,7 +192,7 @@ public final class StatusItemController: NSObject {
                                 styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.level = .popUpMenu
         panel.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
         panel.isMovable = false
@@ -268,13 +269,14 @@ public final class StatusItemController: NSObject {
         let frame = NSRect(x: topLeft.x, y: topLeft.y - height, width: Self.panelWidth, height: height)
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             panel.setFrame(frame, display: true)
+            panel.invalidateShadow()
             return
         }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
             panel.animator().setFrame(frame, display: true)
-        }
+        } completionHandler: { panel.invalidateShadow() }
     }
 
     /// Where to hang the panel: under the status item, on the display that was clicked.
