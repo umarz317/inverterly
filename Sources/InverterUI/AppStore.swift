@@ -168,14 +168,14 @@ public final class AppStore: ObservableObject {
     }
 
     /// Saves the account, then reads the inverter with it, trying each app profile. A failure is left in `signInError`.
-    public func signIn(user: String, password: String) async {
+    public func signIn(user: String, password: String, inKeychain: Bool = true) async {
         signInError = nil
         // The three phone apps share one login but sign it with different app identities, and the
         // cloud answers a wrong identity the same way as a wrong password. So try each in turn; the
         // first one the cloud accepts is saved. Only a refused login moves on to the next.
         for profile in CloudProfile.all {
             do {
-                try InverterConfig.save(app: profile.name, user: user, password: password)
+                try InverterConfig.save(app: profile.name, user: user, password: password, inKeychain: inKeychain)
             } catch {
                 signInError = "Could not save the account: \(error.localizedDescription)"
                 return

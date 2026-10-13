@@ -116,10 +116,12 @@ public struct InverterConfig: Sendable, Equatable {
     }
 
     /// Loads the account. As in the Node loader, a `SHINEMONITOR_*` variable already present in the
-    /// process environment wins over the file, and an empty value counts as missing.
+    /// process environment wins over the file, and an empty value counts as missing. With no password
+    /// in either, it is looked up in `passwords` (the Keychain) under the username.
     public static func load(path explicit: String? = nil,
                             environment: [String: String] = ProcessInfo.processInfo.environment,
-                            defaults: UserDefaults = .standard) throws -> InverterConfig {
+                            defaults: UserDefaults = .standard,
+                            passwords: PasswordStore = .keychain) throws -> InverterConfig {
         let path = resolvePath(explicit, environment: environment, defaults: defaults)
 
         var fileValues: [String: String] = [:]
@@ -137,7 +139,7 @@ public struct InverterConfig: Sendable, Equatable {
         }
 
         let user = value(Key.user)
-        let password = value(Key.password)
+        let password = value(Key.password) ?? user.flatMap { user in passwords.read(user).flatMap { $0.isEmpty ? nil : $0 } }
         guard let user, let password else {
             // The Node loader tolerates a missing file when the environment carries the account;
             // so does this one. Otherwise the missing file is the thing to report.
@@ -170,23 +172,32 @@ public struct InverterConfig: Sendable, Equatable {
     }
 
     /// Saves the account to the env file (mode 0600), keeping any other lines in it, such as a device
-    /// pick. Writes to `resolvePath()`, so the next `load()` finds it.
+    /// pick. Writes to `resolvePath()`, so the next `load()` finds it. With `inKeychain`, the password
+    /// goes to `passwords` instead and the file keeps only the username and app; without it, the
+    /// password is written to the file and any copy in the Keychain is removed.
     @discardableResult
-    public static func save(app: String, user: String, password: String, path explicit: String? = nil) throws -> String {
+    public static func save(app: String, user: String, password: String, inKeychain: Bool = false,
+                            path explicit: String? = nil, passwords: PasswordStore = .keychain) throws -> String {
         let path = resolvePath(explicit)
+        if inKeychain {
+            try passwords.save(password, user)
+        } else {
+            passwords.deleteAll()
+        }
         let lines = lines(of: path, without: [Key.user, Key.password, Key.app])
-            + ["\(Key.user)=\(user)", "\(Key.password)=\(password)", "\(Key.app)=\(app)"]
+            + ["\(Key.user)=\(user)"] + (inKeychain ? [] : ["\(Key.password)=\(password)"]) + ["\(Key.app)=\(app)"]
         try write(lines, to: path)
         return path
     }
 
     /// Forgets the account: removes it from the env file (the file itself goes if nothing else is in
-    /// it) and deletes the saved login session and the daily history.
+    /// it) and from the Keychain, and deletes the saved login session and the daily history.
     public static func signOut(path explicit: String? = nil, sessionStore: SessionStore = .standard,
-                               historyStore: HistoryStore = .standard) throws {
+                               historyStore: HistoryStore = .standard, passwords: PasswordStore = .keychain) throws {
         let path = resolvePath(explicit)
         sessionStore.clear()
         historyStore.clear()
+        passwords.deleteAll()
         let rest = lines(of: path, without: [Key.user, Key.password, Key.app, Key.pn, Key.sn])
         if rest.contains(where: { !jsTrim($0).isEmpty }) {
             try write(rest, to: path)

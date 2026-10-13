@@ -20,9 +20,9 @@ final class ConfigTests: ScratchTestCase {
 
     func testSaveCreatesPrivateFileThatLoadsBack() throws {
         let path = scratch.appendingPathComponent("new/dir/.env").path
-        try InverterConfig.save(app: "dessmonitor", user: "me@example.com", password: "p=w #1", path: path)
+        try InverterConfig.save(app: "dessmonitor", user: "me@example.com", password: "p=w #1", path: path, passwords: .none)
         XCTAssertEqual(try permissions(of: URL(fileURLWithPath: path)), 0o600)
-        let config = try InverterConfig.load(path: path, environment: [:], defaults: defaults)
+        let config = try InverterConfig.load(path: path, environment: [:], defaults: defaults, passwords: .none)
         XCTAssertEqual(config.user, "me@example.com")
         XCTAssertEqual(config.password, "p=w #1")
         XCTAssertEqual(config.profile.name, "dessmonitor")
@@ -30,7 +30,7 @@ final class ConfigTests: ScratchTestCase {
 
     func testSaveReplacesAccountButKeepsOtherLines() throws {
         let path = try write("# mine\nSHINEMONITOR_USER=old\nSHINEMONITOR_PN=PN123\nSHINEMONITOR_PASSWORD=old\n")
-        try InverterConfig.save(app: "watchpower", user: "new", password: "secret", path: path)
+        try InverterConfig.save(app: "watchpower", user: "new", password: "secret", path: path, passwords: .none)
         let values = InverterConfig.parseEnv(try String(contentsOfFile: path, encoding: .utf8))
         XCTAssertEqual(values["SHINEMONITOR_USER"], "new")
         XCTAssertEqual(values["SHINEMONITOR_PASSWORD"], "secret")
@@ -42,7 +42,7 @@ final class ConfigTests: ScratchTestCase {
         let path = try write("# mine\nSHINEMONITOR_USER=a\nSHINEMONITOR_PASSWORD=b\nSHINEMONITOR_APP=watchpower\nSHINEMONITOR_PN=P\nOTHER=keep\n")
         try FileManager.default.createDirectory(at: sessionFile.deletingLastPathComponent(), withIntermediateDirectories: true)
         try "{}".write(to: sessionFile, atomically: true, encoding: .utf8)
-        try InverterConfig.signOut(path: path, sessionStore: store, historyStore: .memoryOnly)
+        try InverterConfig.signOut(path: path, sessionStore: store, historyStore: .memoryOnly, passwords: .none)
         let values = InverterConfig.parseEnv(try String(contentsOfFile: path, encoding: .utf8))
         XCTAssertEqual(values, ["OTHER": "keep"])
         XCTAssertFalse(FileManager.default.fileExists(atPath: sessionFile.path))
@@ -50,8 +50,59 @@ final class ConfigTests: ScratchTestCase {
 
     func testSignOutDeletesAnAccountOnlyFile() throws {
         let path = try write("SHINEMONITOR_USER=a\nSHINEMONITOR_PASSWORD=b\n")
-        try InverterConfig.signOut(path: path, sessionStore: store, historyStore: .memoryOnly)
+        try InverterConfig.signOut(path: path, sessionStore: store, historyStore: .memoryOnly, passwords: .none)
         XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+    }
+
+    // MARK: Keychain
+
+    /// A password store in memory, standing in for the Keychain.
+    private final class Box: @unchecked Sendable {
+        let lock = NSLock()
+        var items: [String: String] = [:]
+        var store: PasswordStore {
+            PasswordStore(read: { account in self.lock.withLock { self.items[account] } },
+                          save: { password, account in self.lock.withLock { self.items[account] = password } },
+                          deleteAll: { self.lock.withLock { self.items = [:] } })
+        }
+    }
+
+    func testAKeychainPasswordStaysOutOfTheFile() throws {
+        let box = Box()
+        let path = scratch.appendingPathComponent("kc/.env").path
+        try InverterConfig.save(app: "dessmonitor", user: "me", password: "secret", inKeychain: true, path: path, passwords: box.store)
+        let text = try String(contentsOfFile: path, encoding: .utf8)
+        XCTAssertFalse(text.contains("secret"))
+        XCTAssertNil(InverterConfig.parseEnv(text)["SHINEMONITOR_PASSWORD"])
+        XCTAssertEqual(box.items, ["me": "secret"])
+
+        let config = try InverterConfig.load(path: path, environment: [:], defaults: defaults, passwords: box.store)
+        XCTAssertEqual(config.user, "me")
+        XCTAssertEqual(config.password, "secret", "read back from the Keychain")
+    }
+
+    func testSavingToTheFileRemovesTheKeychainCopy() throws {
+        let box = Box()
+        box.items = ["me": "old"]
+        let path = try write("")
+        try InverterConfig.save(app: "dessmonitor", user: "me", password: "new", path: path, passwords: box.store)
+        XCTAssertEqual(box.items, [:])
+        XCTAssertEqual(try InverterConfig.load(path: path, environment: [:], defaults: defaults, passwords: box.store).password, "new")
+    }
+
+    func testAPasswordInTheFileWinsOverTheKeychain() throws {
+        let box = Box()
+        box.items = ["me": "from-keychain"]
+        let path = try write("SHINEMONITOR_USER=me\nSHINEMONITOR_PASSWORD=from-file\n")
+        XCTAssertEqual(try InverterConfig.load(path: path, environment: [:], defaults: defaults, passwords: box.store).password, "from-file")
+    }
+
+    func testSignOutEmptiesTheKeychain() throws {
+        let box = Box()
+        box.items = ["me": "secret"]
+        let path = try write("SHINEMONITOR_USER=me\n")
+        try InverterConfig.signOut(path: path, sessionStore: store, historyStore: .memoryOnly, passwords: box.store)
+        XCTAssertEqual(box.items, [:])
     }
 
     // MARK: The old name
@@ -161,7 +212,7 @@ final class ConfigTests: ScratchTestCase {
         SHINEMONITOR_PN=W0000000000000
         SHINEMONITOR_SN=00000000000000
         """)
-        let config = try InverterConfig.load(path: path, environment: [:], defaults: defaults)
+        let config = try InverterConfig.load(path: path, environment: [:], defaults: defaults, passwords: .none)
         XCTAssertEqual(config.profile, .dessmonitor)
         XCTAssertEqual(config.user, "someone@example.com")
         XCTAssertEqual(config.password, "made up")
@@ -172,7 +223,7 @@ final class ConfigTests: ScratchTestCase {
 
     func testOptionalKeysDefaultLikeTheNodeClient() throws {
         let path = try write("SHINEMONITOR_USER=u\nSHINEMONITOR_PASSWORD=p\n")
-        let config = try InverterConfig.load(path: path, environment: [:], defaults: defaults)
+        let config = try InverterConfig.load(path: path, environment: [:], defaults: defaults, passwords: .none)
         XCTAssertEqual(config.profile, .watchpower)
         XCTAssertNil(config.collectorPN, "no serial is baked into the app; the first device is used")
         XCTAssertNil(config.inverterSN)
@@ -186,7 +237,7 @@ final class ConfigTests: ScratchTestCase {
         SHINEMONITOR_BASE_URL=https://example.invalid/public/
         SHINEMONITOR_SOURCE=7
         """)
-        let config = try InverterConfig.load(path: path, environment: [:], defaults: defaults)
+        let config = try InverterConfig.load(path: path, environment: [:], defaults: defaults, passwords: .none)
         XCTAssertEqual(config.profile.name, "dessmonitor")
         XCTAssertEqual(config.profile.baseURL, "https://example.invalid/public/")
         XCTAssertEqual(config.profile.source, 7)
@@ -195,7 +246,7 @@ final class ConfigTests: ScratchTestCase {
     func testProcessEnvironmentWinsOverTheFile() throws {
         let path = try write("SHINEMONITOR_USER=file-user\nSHINEMONITOR_PASSWORD=file-pass\nSHINEMONITOR_APP=solarpower\n")
         let config = try InverterConfig.load(path: path, environment: ["SHINEMONITOR_USER": "env-user", "SHINEMONITOR_APP": "dessmonitor"],
-                                             defaults: defaults)
+                                             defaults: defaults, passwords: .none)
         XCTAssertEqual(config.user, "env-user")
         XCTAssertEqual(config.password, "file-pass")
         XCTAssertEqual(config.profile, .dessmonitor)
@@ -203,7 +254,7 @@ final class ConfigTests: ScratchTestCase {
 
     func testMissingFileIsATypedErrorThatNamesThePath() {
         let path = scratch.appendingPathComponent("nope/.env").path
-        XCTAssertThrowsError(try InverterConfig.load(path: path, environment: [:], defaults: defaults)) { error in
+        XCTAssertThrowsError(try InverterConfig.load(path: path, environment: [:], defaults: defaults, passwords: .none)) { error in
             XCTAssertEqual(error as? InverterConfigError, .fileNotFound(path: path))
             XCTAssertTrue(error.localizedDescription.contains(path))
             XCTAssertTrue(error.localizedDescription.contains("INVERTERLY_ENV"))
@@ -213,13 +264,13 @@ final class ConfigTests: ScratchTestCase {
     func testMissingFileIsFineWhenTheEnvironmentCarriesTheAccount() throws {
         let path = scratch.appendingPathComponent("nope/.env").path
         let config = try InverterConfig.load(path: path, environment: ["SHINEMONITOR_USER": "u", "SHINEMONITOR_PASSWORD": "p"],
-                                             defaults: defaults)
+                                             defaults: defaults, passwords: .none)
         XCTAssertEqual(config.user, "u")
     }
 
     func testMissingKeyIsATypedErrorThatNamesTheKeyAndPathButNoSecret() throws {
         let path = try write("SHINEMONITOR_USER=someone@example.com\nSHINEMONITOR_PASSWORD=\nSHINEMONITOR_APP=dessmonitor\n")
-        XCTAssertThrowsError(try InverterConfig.load(path: path, environment: [:], defaults: defaults)) { error in
+        XCTAssertThrowsError(try InverterConfig.load(path: path, environment: [:], defaults: defaults, passwords: .none)) { error in
             XCTAssertEqual(error as? InverterConfigError, .missingKeys(keys: ["SHINEMONITOR_PASSWORD"], path: path))
             XCTAssertTrue(error.localizedDescription.contains(path))
             XCTAssertTrue(error.localizedDescription.contains("SHINEMONITOR_PASSWORD"))
@@ -227,7 +278,7 @@ final class ConfigTests: ScratchTestCase {
         }
 
         let empty = try write("# nothing here\n", to: "empty.env")
-        XCTAssertThrowsError(try InverterConfig.load(path: empty, environment: [:], defaults: defaults)) { error in
+        XCTAssertThrowsError(try InverterConfig.load(path: empty, environment: [:], defaults: defaults, passwords: .none)) { error in
             XCTAssertEqual(error as? InverterConfigError,
                            .missingKeys(keys: ["SHINEMONITOR_USER", "SHINEMONITOR_PASSWORD"], path: empty))
         }

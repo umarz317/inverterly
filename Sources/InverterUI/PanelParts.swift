@@ -115,6 +115,7 @@ struct SignInView: View {
     @State private var user = ""
     @State private var password = ""
     @State private var working = false
+    @AppStorage("savePasswordInKeychain") private var inKeychain = true
 
     private var ready: Bool { !user.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && !working }
 
@@ -130,6 +131,11 @@ struct SignInView: View {
             VStack(spacing: 8) {
                 field(TextField("Username", text: $user))
                 field(SecureField("Password", text: $password).onSubmit(submit))
+                Toggle("Save password in Keychain", isOn: $inKeychain)
+                    .toggleStyle(.checkbox).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(inKeychain ? "The password is kept in your macOS Keychain; the account file holds only the username."
+                                     : "The password is kept in ~/.config/inverterly/.env, readable only by you.")
             }
             if let error = store.signInError {
                 Text(error).font(.system(size: 11)).foregroundStyle(Color.alertAccent)
@@ -165,9 +171,9 @@ struct SignInView: View {
     private func submit() {
         guard ready else { return }
         working = true
-        let account = (user.trimmingCharacters(in: .whitespaces), password)
+        let account = (user.trimmingCharacters(in: .whitespaces), password, inKeychain)
         Task {
-            await store.signIn(user: account.0, password: account.1)
+            await store.signIn(user: account.0, password: account.1, inKeychain: account.2)
             working = false
             password = ""
         }

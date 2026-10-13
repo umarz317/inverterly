@@ -42,7 +42,7 @@ Click the menu bar item and enter your phone-app username and password. Inverter
 
 To switch accounts, open the three-dot menu and choose **Sign out**.
 
-The account is saved to `~/.config/inverterly/.env`, readable only by you. The login session is kept in `~/Library/Application Support/Inverterly/session.json`, also private. The password never appears in an error message or a log.
+With **Save password in Keychain** on (the default), the password goes into your macOS Keychain and `~/.config/inverterly/.env` keeps only the username and app. With it off, the password is saved in that file, readable only by you. A password in the file wins; with none there, the app looks in the Keychain. The login session is kept in `~/Library/Application Support/Inverterly/session.json`, also private. The password never appears in an error message or a log. Sign out removes the account from both the file and the Keychain.
 
 Coming from InverterBar: on first launch Inverterly moves `~/.config/inverterbar` and `~/Library/Application Support/InverterBar` to the new names, so the saved login and history carry over. `INVERTERBAR_ENV` is still read. Settings from the menu (illustration, menu bar choice, open at login) start fresh.
 
@@ -62,6 +62,7 @@ SHINEMONITOR_PASSWORD=your-password
 SHINEMONITOR_APP=dessmonitor
 ```
 
+- `SHINEMONITOR_PASSWORD` can be left out if the password is in the Keychain (service `com.loopbreak.inverterly`, account = your username).
 - `SHINEMONITOR_APP` is `dessmonitor`, `watchpower` or `solarpower`. WatchPower and DessMonitor use the DessMonitor server over https and have been checked with live accounts. SolarPower uses plain http and has not been tested.
 - `SHINEMONITOR_BASE_URL=http://android.shinemonitor.com/public/` selects the legacy server for an older WatchPower account.
 - `SHINEMONITOR_PN` and `SHINEMONITOR_SN` choose the starting device when the account has more than one; the Inverter menu overrides them.
