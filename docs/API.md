@@ -1,6 +1,6 @@
-# The cloud API InverterBar reads
+# The cloud API Inverterly reads
 
-Voltronic-type inverters (sold as Axpert, MPP Solar, and under many other names) report through a Wi-Fi logger to a vendor cloud. The WatchPower, SolarPower and DessMonitor phone apps read that cloud, and so does InverterBar. This page describes the part of the API the app uses.
+Voltronic-type inverters (sold as Axpert, MPP Solar, and under many other names) report through a Wi-Fi logger to a vendor cloud. The WatchPower, SolarPower and DessMonitor phone apps read that cloud, and so does Inverterly. This page describes the part of the API the app uses.
 
 It is unofficial. Nothing here comes from the vendor: it was worked out from a working client and checked against live DessMonitor and WatchPower accounts on 13 October 2026. Both read successfully through the DessMonitor host. Use your own account, and expect the vendor to change things without notice.
 
@@ -343,7 +343,7 @@ A sample of the flow summary:
 
 ## Settings routes
 
-InverterBar does not send any of these. They are documented because people ask how the phone app changes a setting, and because anyone adding that to a fork should know exactly what is involved.
+Inverterly does not send any of these. They are documented because people ask how the phone app changes a setting, and because anyone adding that to a fork should know exactly what is involved.
 
 Two of the three only read. The third changes the inverter.
 
@@ -387,7 +387,7 @@ ctrlDevice&{device}&id={setting id}&val={value}
 
 `val` is the option's `key` for a list setting (for example `1`, not `Solar-Battery-Utility`), or the number for a free one. Both `id` and `val` are URL-encoded, and the request is signed like any other.
 
-This route is written down from the Node client this project grew out of. InverterBar has never sent it, and its answer is not documented here because it was never captured.
+This route is written down from the Node client this project grew out of. Inverterly has never sent it, and its answer is not documented here because it was never captured.
 
 ### The settings on a 6 kW off-grid unit
 

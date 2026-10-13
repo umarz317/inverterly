@@ -11,7 +11,7 @@ enum LaunchAtLogin {
         do {
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch {
-            NSLog("InverterBar: could not change the login item: \(error.localizedDescription)")
+            NSLog("Inverterly: could not change the login item: \(error.localizedDescription)")
         }
     }
 }

@@ -76,9 +76,11 @@ public struct InverterConfig: Sendable, Equatable {
         static let all = [user, password, app, pn, sn, baseURL, source]
     }
 
-    public static let envPathVariable = "INVERTERBAR_ENV"
+    public static let envPathVariable = "INVERTERLY_ENV"
+    /// The variable's name from when the app was called InverterBar; still read.
+    static let oldEnvPathVariable = "INVERTERBAR_ENV"
     public static let envPathDefaultsKey = "envPath"
-    public static let defaultEnvPath = "~/.config/inverterbar/.env"
+    public static let defaultEnvPath = "~/.config/inverterly/.env"
     /// Also looked in, for people who already keep the account in the inverter-control Node project.
     public static let legacyEnvPath = "~/Documents/inverter-control/.env"
 
@@ -98,15 +100,16 @@ public struct InverterConfig: Sendable, Equatable {
         self.collectorPN = collectorPN; self.inverterSN = inverterSN; self.sourcePath = sourcePath
     }
 
-    /// Where the account file is: the explicit argument, then `INVERTERBAR_ENV`, then the
-    /// `envPath` user default, then `~/.config/inverterbar/.env`. Empty values are skipped.
+    /// Where the account file is: the explicit argument, then `INVERTERLY_ENV`, then the
+    /// `envPath` user default, then `~/.config/inverterly/.env`. Empty values are skipped.
     /// If that last file is missing and `~/Documents/inverter-control/.env` exists, that one is used.
     public static func resolvePath(_ explicit: String? = nil,
                                    environment: [String: String] = ProcessInfo.processInfo.environment,
                                    defaults: UserDefaults = .standard,
                                    fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> String {
         func expand(_ path: String) -> String { (path as NSString).expandingTildeInPath }
-        let candidates = [explicit, environment[envPathVariable], defaults.string(forKey: envPathDefaultsKey)]
+        let candidates = [explicit, environment[envPathVariable], environment[oldEnvPathVariable],
+                          defaults.string(forKey: envPathDefaultsKey)]
         if let chosen = candidates.compactMap({ $0 }).map(jsTrim).first(where: { !$0.isEmpty }) { return expand(chosen) }
         let standard = expand(defaultEnvPath), legacy = expand(legacyEnvPath)
         return !fileExists(standard) && fileExists(legacy) ? legacy : standard
@@ -189,6 +192,21 @@ public struct InverterConfig: Sendable, Equatable {
             try write(rest, to: path)
         } else if FileManager.default.fileExists(atPath: path) {
             try FileManager.default.removeItem(atPath: path)
+        }
+    }
+
+    /// Moves what the app kept under its old name, InverterBar, to where it looks now:
+    /// `~/.config/inverterbar` and `~/Library/Application Support/InverterBar`. A folder is moved only
+    /// when the new one does not exist yet, so nothing is ever overwritten.
+    public static func moveFilesFromOldName(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        let moves = [(".config/inverterbar", ".config/inverterly"),
+                     ("Library/Application Support/InverterBar", "Library/Application Support/Inverterly")]
+        for (old, new) in moves {
+            let from = home.appendingPathComponent(old), to = home.appendingPathComponent(new)
+            let manager = FileManager.default
+            guard manager.fileExists(atPath: from.path), !manager.fileExists(atPath: to.path) else { continue }
+            try? manager.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? manager.moveItem(at: from, to: to)
         }
     }
 

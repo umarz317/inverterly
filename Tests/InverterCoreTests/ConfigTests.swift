@@ -54,6 +54,31 @@ final class ConfigTests: ScratchTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: path))
     }
 
+    // MARK: The old name
+
+    func testFilesMoveFromTheOldNameWithoutOverwriting() throws {
+        let home = scratch!
+        let oldConfig = home.appendingPathComponent(".config/inverterbar")
+        try FileManager.default.createDirectory(at: oldConfig, withIntermediateDirectories: true)
+        try "SHINEMONITOR_USER=a\n".write(to: oldConfig.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+        // The support folder already exists under the new name: it is left alone.
+        let newSupport = home.appendingPathComponent("Library/Application Support/Inverterly")
+        let oldSupport = home.appendingPathComponent("Library/Application Support/InverterBar")
+        try FileManager.default.createDirectory(at: newSupport, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: oldSupport, withIntermediateDirectories: true)
+
+        InverterConfig.moveFilesFromOldName(home: home)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: home.appendingPathComponent(".config/inverterly/.env").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldConfig.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: oldSupport.path), "not moved over an existing folder")
+    }
+
+    func testTheOldEnvironmentVariableIsStillRead() {
+        XCTAssertEqual(InverterConfig.resolvePath(nil, environment: ["INVERTERBAR_ENV": "/old/.env"], defaults: defaults,
+                                                  fileExists: { _ in false }), "/old/.env")
+    }
+
     // MARK: Env file parsing (same rules as loadEnvFile() in the Node client)
 
     func testParseEnvFollowsTheNodeLoader() {
@@ -181,7 +206,7 @@ final class ConfigTests: ScratchTestCase {
         XCTAssertThrowsError(try InverterConfig.load(path: path, environment: [:], defaults: defaults)) { error in
             XCTAssertEqual(error as? InverterConfigError, .fileNotFound(path: path))
             XCTAssertTrue(error.localizedDescription.contains(path))
-            XCTAssertTrue(error.localizedDescription.contains("INVERTERBAR_ENV"))
+            XCTAssertTrue(error.localizedDescription.contains("INVERTERLY_ENV"))
         }
     }
 
@@ -212,7 +237,7 @@ final class ConfigTests: ScratchTestCase {
 
     func testPathResolutionOrder() {
         let home = NSHomeDirectory()
-        let standard = home + "/.config/inverterbar/.env", legacy = home + "/Documents/inverter-control/.env"
+        let standard = home + "/.config/inverterly/.env", legacy = home + "/Documents/inverter-control/.env"
         // With neither file present the standard place is named, so the error points a new user there.
         XCTAssertEqual(InverterConfig.resolvePath(nil, environment: [:], defaults: defaults, fileExists: { _ in false }), standard)
         // Someone who already has the Node project's file keeps using it...
@@ -223,7 +248,7 @@ final class ConfigTests: ScratchTestCase {
         defaults.set("/from/defaults/.env", forKey: "envPath")
         XCTAssertEqual(InverterConfig.resolvePath(nil, environment: [:], defaults: defaults), "/from/defaults/.env")
 
-        let environment = ["INVERTERBAR_ENV": "/from/environment/.env"]
+        let environment = ["INVERTERLY_ENV": "/from/environment/.env"]
         XCTAssertEqual(InverterConfig.resolvePath(nil, environment: environment, defaults: defaults), "/from/environment/.env")
 
         XCTAssertEqual(InverterConfig.resolvePath("/explicit/.env", environment: environment, defaults: defaults), "/explicit/.env")
@@ -231,8 +256,8 @@ final class ConfigTests: ScratchTestCase {
 
     func testPathResolutionSkipsEmptyValuesAndExpandsTilde() {
         defaults.set("  ", forKey: "envPath")
-        XCTAssertEqual(InverterConfig.resolvePath("", environment: ["INVERTERBAR_ENV": ""], defaults: defaults, fileExists: { _ in false }),
-                       NSHomeDirectory() + "/.config/inverterbar/.env")
+        XCTAssertEqual(InverterConfig.resolvePath("", environment: ["INVERTERLY_ENV": ""], defaults: defaults, fileExists: { _ in false }),
+                       NSHomeDirectory() + "/.config/inverterly/.env")
         XCTAssertEqual(InverterConfig.resolvePath("~/somewhere/.env", environment: [:], defaults: defaults),
                        NSHomeDirectory() + "/somewhere/.env")
     }

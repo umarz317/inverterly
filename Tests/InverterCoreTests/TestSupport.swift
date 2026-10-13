@@ -215,7 +215,7 @@ class ScratchTestCase: XCTestCase {
         try? FileManager.default.removeItem(at: scratch)
     }
 
-    var sessionFile: URL { scratch.appendingPathComponent("InverterBar/session.json") }
+    var sessionFile: URL { scratch.appendingPathComponent("Inverterly/session.json") }
     var store: SessionStore { SessionStore(fileURL: sessionFile) }
 
     func write(_ text: String, to name: String = ".env") throws -> String {

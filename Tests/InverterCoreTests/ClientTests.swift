@@ -540,7 +540,7 @@ final class ClientTests: ScratchTestCase {
     /// The standard store is where the brief says, and nowhere near the Node project.
     func testStandardSessionLocation() throws {
         let path = try XCTUnwrap(SessionStore.standard.fileURL?.path)
-        XCTAssertTrue(path.hasSuffix("/Library/Application Support/InverterBar/session.json"), path)
+        XCTAssertTrue(path.hasSuffix("/Library/Application Support/Inverterly/session.json"), path)
         XCTAssertFalse(path.contains("inverter-control"))
     }
 }

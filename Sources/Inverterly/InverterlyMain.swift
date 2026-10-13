@@ -2,7 +2,7 @@ import AppKit
 import InverterCore
 import InverterUI
 
-/// InverterBar lives only in the menu bar: no Dock icon, no main window.
+/// Inverterly lives only in the menu bar: no Dock icon, no main window.
 ///
 /// Launch flags:
 ///   --open   open the panel as soon as the app starts
@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let forced = arguments.firstIndex(of: "--style").flatMap { index in
             index + 1 < arguments.count ? HeroStyle(rawValue: arguments[index + 1]) : nil
         }
+        InverterConfig.moveFilesFromOldName()
         let store = AppStore(provider: InverterService(), heroStyle: forced)
         let status = StatusItemController(store: store)
         self.store = store
@@ -26,23 +27,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard arguments.contains("--open") else { return }
         status.staysOpen = true
-        after(1.0) {
-            status.open()
-            // With INVERTERBAR_DEBUG set, print the panel's window number so a script can capture just that window.
-            if ProcessInfo.processInfo.environment["INVERTERBAR_DEBUG"] != nil, let number = status.panelWindowNumber {
-                print("PANEL \(number)")
-                fflush(stdout)
-            }
-        }
-    }
-
-    private func after(_ seconds: Double, _ action: @escaping @MainActor () -> Void) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { MainActor.assumeIsolated(action) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { MainActor.assumeIsolated { status.open() } }
     }
 }
 
 @main
-enum InverterBarMain {
+enum InverterlyMain {
     @MainActor
     static func main() {
         let application = NSApplication.shared

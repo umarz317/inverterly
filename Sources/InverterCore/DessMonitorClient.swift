@@ -196,7 +196,7 @@ extension DessMonitorError: LocalizedError {
         case .invalidRequest(let action):
             return "Could not build the request for \(action)."
         case .actionNotAllowed(let action):
-            return "InverterBar only reads from the inverter. It does not send \(action)."
+            return "Inverterly only reads from the inverter. It does not send \(action)."
         }
     }
 }
@@ -269,7 +269,7 @@ extension DessSession: CustomStringConvertible, CustomDebugStringConvertible, Cu
     var customMirror: Mirror { Mirror(self, children: ["profile": profile], displayStyle: .struct) }
 }
 
-/// Where the session is kept: `~/Library/Application Support/InverterBar/session.json`, mode 0600.
+/// Where the session is kept: `~/Library/Application Support/Inverterly/session.json`, mode 0600.
 /// The Node project's own `.session.json` is never read or written.
 public struct SessionStore: Sendable {
     public let fileURL: URL?
@@ -278,12 +278,7 @@ public struct SessionStore: Sendable {
         self.fileURL = fileURL
     }
 
-    public static let standard: SessionStore = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support", isDirectory: true)
-        return SessionStore(fileURL: base.appendingPathComponent("InverterBar", isDirectory: true)
-            .appendingPathComponent("session.json", isDirectory: false))
-    }()
+    public static let standard = SessionStore(fileURL: appSupportFile("session.json"))
 
     /// Keeps the session in memory only.
     public static let memoryOnly = SessionStore(fileURL: nil)
@@ -309,6 +304,13 @@ public struct SessionStore: Sendable {
         guard let fileURL else { return }
         try? FileManager.default.removeItem(at: fileURL)
     }
+}
+
+/// A file in `~/Library/Application Support/Inverterly`.
+func appSupportFile(_ name: String) -> URL {
+    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support", isDirectory: true)
+    return base.appendingPathComponent("Inverterly", isDirectory: true).appendingPathComponent(name, isDirectory: false)
 }
 
 /// Writes through a 0600 temporary file and renames it over the old one, so the secret is

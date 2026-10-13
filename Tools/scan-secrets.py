@@ -14,11 +14,11 @@ Exit status 0 = clean, 1 = something found, 2 = no secrets could be loaded to lo
 import hashlib, json, os, sys
 
 HOME = os.path.expanduser("~")
-ENV = os.environ.get("INVERTERBAR_ENV") or next(
-    (p for p in (os.path.join(HOME, ".config/inverterbar/.env"), os.path.join(HOME, "Documents/inverter-control/.env")) if os.path.exists(p)),
-    os.path.join(HOME, ".config/inverterbar/.env"))
+ENV = os.environ.get("INVERTERLY_ENV") or next(
+    (p for p in (os.path.join(HOME, ".config/inverterly/.env"), os.path.join(HOME, "Documents/inverter-control/.env")) if os.path.exists(p)),
+    os.path.join(HOME, ".config/inverterly/.env"))
 SESSIONS = [
-    os.path.join(HOME, "Library/Application Support/InverterBar/session.json"),
+    os.path.join(HOME, "Library/Application Support/Inverterly/session.json"),
     os.path.join(os.path.dirname(ENV), ".session.json"),
 ]
 # Identifiers are not credentials, but the fixtures promise they were replaced.
@@ -72,7 +72,7 @@ def main():
             session = json.load(open(path))
         except (OSError, ValueError):
             continue
-        label = "app session" if "InverterBar" in path else "Node session"
+        label = "app session" if "Inverterly" in path else "Node session"
         for field in ("token", "secret"):
             value = str(session.get(field) or "")
             if len(value) >= MIN_LENGTH:

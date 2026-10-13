@@ -4,7 +4,7 @@ import InverterCore
 // Prints one live reading and the size of today's curve. Read-only: it only sends queries.
 // The output is safe to paste anywhere: no password, token, serial number or stick PN.
 //
-//   swift run InverterProbe                    account from INVERTERBAR_ENV / the envPath default / ~/.config/inverterbar/.env
+//   swift run InverterProbe                    account from INVERTERLY_ENV / the envPath default / ~/.config/inverterly/.env
 //   swift run InverterProbe /path/to/.env      account from this file
 //   swift run InverterProbe --memory           do not read or write the saved session file
 //   swift run InverterProbe --session <file>   keep the session in this file instead of the app's own
@@ -68,7 +68,7 @@ do {
     let s = try await service.fetchSnapshot()
     let tookMs = Int(Date().timeIntervalSince(started) * 1000)
 
-    print("InverterBar probe (read-only), fetched in \(tookMs) ms")
+    print("Inverterly probe (read-only), fetched in \(tookMs) ms")
     line("plant", s.plantName ?? "n/a")
     line("machine", s.machineType ?? "n/a")
     if let deviceTime = s.deviceTime {
