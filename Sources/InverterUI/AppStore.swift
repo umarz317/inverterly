@@ -25,6 +25,12 @@ public enum MenuBarMetric: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Which list the History section shows.
+public enum HistoryTab: String, CaseIterable, Identifiable, Sendable {
+    case days = "Days", months = "Months"
+    public var id: String { rawValue }
+}
+
 /// Holds the latest reading and the user's display choices, and polls the provider.
 @MainActor
 public final class AppStore: ObservableObject {
@@ -37,6 +43,10 @@ public final class AppStore: ObservableObject {
     @Published public private(set) var today: DayCurve?
     @Published public private(set) var todayLoading = false
     @Published public private(set) var todayError: String?
+    /// Daily totals read so far, by day ("2026-10-13").
+    @Published public private(set) var history: [String: DayTotals] = [:]
+    @Published public private(set) var historyLoading = false
+    @Published public private(set) var historyError: String?
     /// Frame of the menu bar icon's animation. Deliberately not `@Published`: a change here must
     /// redraw the status item only, not re-evaluate the whole panel.
     public private(set) var iconPhase = 0 { didSet { if iconPhase != oldValue { iconPhaseChanged.send() } } }
@@ -48,6 +58,8 @@ public final class AppStore: ObservableObject {
     /// The two sections that open in place. Not remembered between launches.
     @Published public var showToday = false
     @Published public var showDetails = false
+    @Published public var showHistory = false
+    @Published public var historyTab: HistoryTab = .days { didSet { if historyTab != oldValue { Task { await loadHistory(force: true) } } } }
     @Published public var panelOpen = false { didSet { if panelOpen && !oldValue { panelOpened() } } }
 
     /// False when the illustration was forced for this run (`--style`), so that a recording
@@ -60,6 +72,7 @@ public final class AppStore: ObservableObject {
     private var lastAttempt = Date.distantPast
     private var consecutiveFailures = 0
     private var todayFetchedAt = Date.distantPast
+    private var historyFetchedAt = Date.distantPast
 
     private enum Keys { static let hero = "heroStyle", metric = "menuBarMetric", animate = "animateIcon" }
 
@@ -148,6 +161,7 @@ public final class AppStore: ObservableObject {
         await provider.reset()
         while busy { try? await Task.sleep(for: .milliseconds(100)) }
         snapshot = nil; today = nil; todayError = nil; errorMessage = nil
+        history = [:]; historyError = nil; historyFetchedAt = .distantPast
         signInError = nil; signInRequired = true
         stopIconBurst()
     }
@@ -173,12 +187,78 @@ public final class AppStore: ObservableObject {
         }
     }
 
+    // MARK: History
+
+    /// The days of the current month that have been read, newest first.
+    public var currentMonthDays: [DayTotals] {
+        let month = Self.dayFormatter.string(from: Date()).prefix(7)
+        return history.values.filter { $0.day.hasPrefix(month) }.sorted { $0.day > $1.day }
+    }
+
+    /// Every month that has been read, newest first.
+    public var months: [MonthTotals] { MonthTotals.monthly(history.values) }
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    /// Reads the days of this month, and for the Months tab the months before it, until one has
+    /// nothing. Finished days come from disk after the first time; only today is read again.
+    public func loadHistory(force: Bool = false) async {
+        guard !historyLoading, force || Date().timeIntervalSince(historyFetchedAt) > 300 else { return }
+        historyLoading = true
+        historyError = nil
+        defer { historyLoading = false; historyFetchedAt = Date() }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var month = calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today
+        let monthsToRead = historyTab == .days ? 1 : 24
+        for index in 0..<monthsToRead {
+            let days = Self.days(of: month, upTo: today, calendar: calendar)
+            guard await readDays(days) || index == 0 else { break }
+            guard let earlier = calendar.date(byAdding: .month, value: -1, to: month) else { break }
+            month = earlier
+        }
+    }
+
+    private static func days(of month: Date, upTo today: Date, calendar: Calendar) -> [String] {
+        let count = calendar.range(of: .day, in: .month, for: month)?.count ?? 0
+        return (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: month) }
+            .filter { $0 <= today }.map { dayFormatter.string(from: $0) }
+    }
+
+    /// Reads these days, three at a time. True if any of them has data.
+    private func readDays(_ days: [String]) async -> Bool {
+        let provider = self.provider
+        var pending = days.filter { history[$0]?.complete != true }.makeIterator()
+        await withTaskGroup(of: (String, DayTotals?, Error?).self) { group in
+            for _ in 0..<3 {
+                guard let day = pending.next() else { break }
+                group.addTask { await Self.read(day, from: provider) }
+            }
+            while let (day, totals, error) = await group.next() {
+                if let totals { history[day] = totals }
+                if let error { historyError = Self.describe(error) }
+                if let next = pending.next() { group.addTask { await Self.read(next, from: provider) } }
+            }
+        }
+        return days.contains { history[$0] != nil }
+    }
+
+    private nonisolated static func read(_ day: String, from provider: SnapshotProviding) async -> (String, DayTotals?, Error?) {
+        do { return (day, try await provider.fetchDayTotals(day: day), nil) } catch { return (day, nil, error) }
+    }
+
     private func panelOpened() {
         Task {
             if Date().timeIntervalSince(lastAttempt) > 30 { await refresh(force: false) }
             // The chart is otherwise only loaded when its section is toggled, so one left open
             // would show this morning's curve all day.
             if showToday { await loadToday() }
+            if showHistory { await loadHistory() }
         }
     }
 

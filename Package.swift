@@ -17,6 +17,7 @@ let package = Package(
         // Prints one live reading and the size of today's curve. Read-only, no secrets in the output.
         .executableTarget(name: "InverterProbe", dependencies: ["InverterCore"]),
         .testTarget(name: "InverterCoreTests", dependencies: ["InverterCore"]),
+        .testTarget(name: "InverterUITests", dependencies: ["InverterCore", "InverterUI"]),
     ],
     swiftLanguageModes: [.v5]
 )

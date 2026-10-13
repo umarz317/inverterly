@@ -128,9 +128,14 @@ public struct InverterPanel: View {
 
             tiles(snapshot).padding(.bottom, 6)
 
-            SectionRow(title: "Today", trailing: snapshot.todayKWh.map { PowerFormat.kWh($0) + " solar" }, open: $store.showToday)
+            SectionRow(title: "Today", trailing: todaySummary(snapshot), open: $store.showToday)
             if store.showToday {
                 TodaySection(store: store, snapshot: snapshot).padding(.bottom, 8).transition(.opacity)
+            }
+            Divider().opacity(0.5)
+            SectionRow(title: "History", trailing: historySummary, open: $store.showHistory)
+            if store.showHistory {
+                HistorySection(store: store).padding(.bottom, 8).transition(.opacity)
             }
             Divider().opacity(0.5)
             SectionRow(title: "Details", trailing: nil, open: $store.showDetails)
@@ -142,7 +147,11 @@ public struct InverterPanel: View {
         .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .animation(.snappy, value: snapshot.mode)
         .onChange(of: store.showToday) { _, open in if open { Task { await store.loadToday() } } }
-        .task { if store.showToday { await store.loadToday() } }
+        .onChange(of: store.showHistory) { _, open in if open { Task { await store.loadHistory() } } }
+        .task {
+            if store.showToday { await store.loadToday() }
+            if store.showHistory { await store.loadHistory() }
+        }
     }
 
     @ViewBuilder
@@ -150,6 +159,20 @@ public struct InverterPanel: View {
         HeroHost(snapshot: snapshot, active: store.panelOpen) { frame, now in
             store.heroStyle.view(frame: frame, now: now)
         }
+    }
+
+    /// Today's solar, and the estimated grid draw once today's readings have been read.
+    private func todaySummary(_ snapshot: EnergySnapshot) -> String? {
+        guard let solar = snapshot.todayKWh else { return nil }
+        guard let curve = store.today, !curve.points.isEmpty else { return PowerFormat.kWh(solar) + " solar" }
+        return PowerFormat.kWh(solar) + " solar · " + PowerFormat.kWh(curve.totals().gridKWh) + " grid"
+    }
+
+    /// This month's solar so far, once the days have been read.
+    private var historySummary: String? {
+        let days = store.currentMonthDays
+        guard !days.isEmpty else { return nil }
+        return PowerFormat.kWh(days.reduce(0) { $0 + $1.solarKWh }) + " solar this month"
     }
 
     private func statusLine(_ snapshot: EnergySnapshot) -> String {
@@ -252,32 +275,253 @@ private struct TodaySection: View {
             }
             .frame(height: 96)
 
-            HStack(spacing: 6) {
-                EnergyStat(caption: "Today", value: snapshot.todayKWh)
-                EnergyStat(caption: "Month", value: snapshot.monthKWh)
-                EnergyStat(caption: "Year", value: snapshot.yearKWh)
-                EnergyStat(caption: "Lifetime", value: snapshot.totalKWh)
+            if let curve = store.today, !curve.points.isEmpty {
+                let totals = curve.totals()
+                HistorySummary(title: "So far today", solar: totals.solarKWh, grid: totals.gridKWh, load: totals.loadKWh)
             }
         }
     }
 }
 
-private struct EnergyStat: View {
-    let caption: String
-    let value: Double?
+private struct HistorySection: View {
+    @ObservedObject var store: AppStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(spacing: 10) {
+            Picker("", selection: $store.historyTab) {
+                ForEach(HistoryTab.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden().controlSize(.small)
+
+            let rows = self.rows
+            // Today has its own section above, so its running total is only counted in the summary.
+            let listed = rows.filter { !$0.live }
+            if rows.isEmpty {
+                Text(store.historyLoading ? "Reading history…" : store.historyError ?? "No history yet.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 120)
+            } else {
+                HistorySummary(title: store.historyTab == .days ? "This month" : "Last \(rows.count) months",
+                               solar: rows.reduce(0) { $0 + $1.solar }, grid: rows.reduce(0) { $0 + $1.grid },
+                               load: rows.reduce(0) { $0 + $1.load })
+                VStack(spacing: 0) {
+                    HistoryHeader()
+                    ScrollView {
+                        let scale = listed.map { $0.solar + $0.grid }.max() ?? 0
+                        LazyVStack(spacing: 0) {
+                            ForEach(listed) { HistoryRow(row: $0, scale: scale).transition(.opacity.combined(with: .move(edge: .top))) }
+                        }
+                        .animation(.smooth, value: listed.map(\.id))
+                        .padding(.bottom, 10)
+                    }
+                    .frame(height: 176)
+                    // Fade the last row instead of cutting it in half, so it reads as scrollable.
+                    .mask(LinearGradient(stops: [.init(color: .black, location: 0.88), .init(color: .clear, location: 1)],
+                                         startPoint: .top, endPoint: .bottom))
+                }
+            }
+
+            HStack(spacing: 6) {
+                if store.historyLoading && !rows.isEmpty {
+                    ProgressView().controlSize(.mini)
+                    Text("Updating…")
+                } else if let error = store.historyError, !rows.isEmpty {
+                    Text(error)
+                } else {
+                    Text("All values in kWh. Grid is estimated from the logger's readings.")
+                }
+            }
+            .font(.system(size: 10)).foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var rows: [HistoryRow.Data] {
+        switch store.historyTab {
+        case .days:
+            return store.currentMonthDays.map {
+                HistoryRow.Data(id: $0.day, label: Self.dayLabel($0.day), solar: $0.solarKWh, grid: $0.gridKWh,
+                                load: $0.loadKWh, live: !$0.complete)
+            }
+        case .months:
+            return store.months.map {
+                HistoryRow.Data(id: $0.month, label: Self.monthLabel($0.month), solar: $0.solarKWh, grid: $0.gridKWh,
+                                load: $0.loadKWh, live: false)
+            }
+        }
+    }
+
+    private static func date(_ text: String, _ format: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = format
+        return formatter.date(from: text)
+    }
+
+    private static func dayLabel(_ day: String) -> String {
+        guard let date = date(day, "yyyy-MM-dd") else { return day }
+        if Calendar.current.isDateInToday(date) { return "Today" }
+        if Calendar.current.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(.dateTime.weekday(.abbreviated).day())
+    }
+
+    private static func monthLabel(_ month: String) -> String {
+        date(month, "yyyy-MM")?.formatted(.dateTime.month(.abbreviated).year()) ?? month
+    }
+}
+
+/// kWh with one decimal below 100 and none above, so columns stay narrow.
+private func kWhText(_ value: Double) -> String {
+    value >= 100 ? String(format: "%.0f", value) : String(format: "%.1f", value)
+}
+
+/// A kWh figure that counts up to its value when it appears, and on to each new value as history
+/// is read in, rather than jumping.
+private struct CountingKWh: View {
+    let value: Double
+    var percentOf: Double? = nil
+    @State private var shown: Double = 0
+
+    var body: some View {
+        Counter(value: shown, percentOf: percentOf)
+            .onAppear { withAnimation(.easeOut(duration: 0.9)) { shown = value } }
+            .onChange(of: value) { _, new in withAnimation(.easeOut(duration: 0.6)) { shown = new } }
+    }
+
+    private struct Counter: View, Animatable {
+        var value: Double
+        let percentOf: Double?
+        var animatableData: Double {
+            get { value }
+            set { value = newValue }
+        }
+        var body: some View {
+            if let percentOf {
+                Text("\(Int((percentOf > 0 ? value / percentOf * 100 : 0).rounded()))% from solar")
+            } else {
+                Text(kWhText(value))
+            }
+        }
+    }
+}
+
+/// The period's totals, and how much of the energy came from the sun.
+private struct HistorySummary: View {
+    let title: String
+    let solar: Double
+    let grid: Double
+    let load: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title).font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer()
+                CountingKWh(value: solar, percentOf: solar + grid)
+                    .font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(Color.solarText)
+            }
+            // No box of its own: the panel is already glass, so colour carries the grouping instead.
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                stat("Solar", solar, .solarText)
+                stat("Grid", grid, .gridText)
+                stat("Load", load, .primary)
+            }
+            ShareBar(solar: solar, grid: grid, scale: solar + grid).frame(height: 4)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func stat(_ caption: String, _ value: Double, _ tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             Text(caption).font(.system(size: 10)).foregroundStyle(.secondary)
-            Text(text).font(.system(size: 12, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                CountingKWh(value: value).font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .monospacedDigit().foregroundStyle(tint)
+                Text("kWh").font(.system(size: 10)).foregroundStyle(.tertiary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
 
-    private var text: String {
-        guard let value else { return "–" }
-        if value >= 1000 { return String(format: "%.2f MWh", value / 1000) }
-        return PowerFormat.kWh(value)
+extension Color {
+    /// The solar and grid accents as text: the pastel accents in dark mode, deeper shades that stay
+    /// readable on a light panel.
+    static let solarText = adaptive(dark: NSColor(Color.solarAccent), light: NSColor(red: 0.74, green: 0.48, blue: 0.0, alpha: 1))
+    static let gridText = adaptive(dark: NSColor(Color.gridAccent), light: NSColor(red: 0.13, green: 0.42, blue: 0.86, alpha: 1))
+
+    private static func adaptive(dark: NSColor, light: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light })
+    }
+}
+
+/// Solar then grid, side by side, each as long as its share of `scale`.
+private struct ShareBar: View {
+    let solar: Double
+    let grid: Double
+    let scale: Double
+    @State private var grown = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            // Starts empty and grows with the numbers; later changes animate with them.
+            let unit = scale > 0 && grown ? proxy.size.width / scale : 0
+            HStack(spacing: 1) {
+                if solar > 0 { Capsule().fill(Color.solarText).frame(width: max(2, solar * unit)) }
+                if grid > 0 { Capsule().fill(Color.gridText).frame(width: max(2, grid * unit)) }
+                Spacer(minLength: 0)
+            }
+            .background(Capsule().fill(.primary.opacity(0.07)))
+        }
+        .animation(.easeOut(duration: 0.6), value: [solar, grid, scale])
+        .onAppear { withAnimation(.easeOut(duration: 0.9)) { grown = true } }
+    }
+}
+
+private enum HistoryColumns {
+    static let label: CGFloat = 70
+    static let number: CGFloat = 42
+}
+
+private struct HistoryHeader: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Spacer().frame(width: HistoryColumns.label)
+            Spacer(minLength: 0)
+            Text("Solar").foregroundStyle(Color.solarText).frame(width: HistoryColumns.number, alignment: .trailing)
+            Text("Grid").foregroundStyle(Color.gridText).frame(width: HistoryColumns.number, alignment: .trailing)
+            Text("Load").frame(width: HistoryColumns.number, alignment: .trailing)
+        }
+        .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+        .padding(.bottom, 2)
+    }
+}
+
+private struct HistoryRow: View {
+    struct Data: Identifiable {
+        let id: String
+        let label: String
+        let solar: Double
+        let grid: Double
+        let load: Double
+        /// A day still going: its numbers are a running total.
+        let live: Bool
+    }
+    let row: Data
+    let scale: Double
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(row.label).frame(width: HistoryColumns.label, alignment: .leading).lineLimit(1)
+            ShareBar(solar: row.solar, grid: row.grid, scale: scale).frame(height: 4)
+            CountingKWh(value: row.solar).frame(width: HistoryColumns.number, alignment: .trailing)
+            CountingKWh(value: row.grid).frame(width: HistoryColumns.number, alignment: .trailing)
+            CountingKWh(value: row.load).frame(width: HistoryColumns.number, alignment: .trailing)
+                .fontWeight(.medium)
+        }
+        .font(.system(size: 11)).monospacedDigit()
+        .foregroundStyle(row.live ? .secondary : .primary)
+        .padding(.vertical, 4.5)
+        .help(row.live ? "So far today" : "")
     }
 }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 import InverterCore
 
-/// Today from midnight to midnight: solar as a soft filled curve, load as a line over it.
+/// Today from midnight to midnight: solar as a soft filled curve, grid and load as lines over it.
 struct TodayChart: View {
     let curve: DayCurve
 
@@ -9,19 +9,23 @@ struct TodayChart: View {
         VStack(alignment: .leading, spacing: 4) {
             Canvas { canvas, size in draw(&canvas, size: size) }
                 .accessibilityLabel("Chart of today's solar and load power")
-            HStack(spacing: 12) {
-                legend(color: .solarAccent, text: "Solar, peak \(PowerFormat.watts(curve.peakPvW))")
-                legend(color: .primary.opacity(0.75), text: "Load, peak \(PowerFormat.watts(curve.peakLoadW))")
+            HStack(spacing: 10) {
+                Text("Peak").font(.system(size: 10)).foregroundStyle(.tertiary)
+                legend(color: .solarText, name: "Solar", watts: curve.peakPvW)
+                legend(color: .gridText, name: "Grid", watts: curve.peakGridW)
+                legend(color: .primary.opacity(0.75), name: "Load", watts: curve.peakLoadW)
                 Spacer(minLength: 0)
             }
         }
     }
 
-    private func legend(color: Color, text: String) -> some View {
+    private func legend(color: Color, name: String, watts: Double) -> some View {
         HStack(spacing: 4) {
             Capsule().fill(color).frame(width: 8, height: 2.5)
-            Text(text).font(.system(size: 10)).monospacedDigit().foregroundStyle(.secondary)
+            Text(name).foregroundStyle(.secondary)
+            Text(PowerFormat.watts(watts)).monospacedDigit()
         }
+        .font(.system(size: 10)).lineLimit(1).fixedSize()
     }
 
     private func draw(_ canvas: inout GraphicsContext, size: CGSize) {
@@ -30,7 +34,7 @@ struct TodayChart: View {
         let dayStart = curve.dayStart
         let labelBand: CGFloat = 12
         let plot = CGRect(x: 0, y: 2, width: size.width, height: size.height - labelBand - 2)
-        let top = niceCeiling(max(curve.peakPvW, curve.peakLoadW, 500))
+        let top = niceCeiling(max(curve.peakPvW, curve.peakLoadW, curve.peakGridW, 500))
         let ink = Color.primary
 
         func x(_ date: Date) -> CGFloat {
@@ -71,13 +75,17 @@ struct TodayChart: View {
                                                 startPoint: CGPoint(x: 0, y: plot.minY), endPoint: CGPoint(x: 0, y: plot.maxY)))
         canvas.stroke(line, with: .color(Color.solarAccent.opacity(0.95)), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
 
-        // Load line.
-        var load = Path()
-        for (index, point) in curve.points.enumerated() {
-            let p = CGPoint(x: x(point.time), y: y(point.loadW))
-            if index == 0 { load.move(to: p) } else { load.addLine(to: p) }
+        // Grid and load lines.
+        func trace(_ watts: KeyPath<DayCurvePoint, Double>) -> Path {
+            var path = Path()
+            for (index, point) in curve.points.enumerated() {
+                let p = CGPoint(x: x(point.time), y: y(point[keyPath: watts]))
+                if index == 0 { path.move(to: p) } else { path.addLine(to: p) }
+            }
+            return path
         }
-        canvas.stroke(load, with: .color(ink.opacity(0.75)), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
+        canvas.stroke(trace(\.gridW), with: .color(Color.gridAccent.opacity(0.9)), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
+        canvas.stroke(trace(\.loadW), with: .color(ink.opacity(0.75)), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
 
         // "Now" marker at the latest reading.
         if let last = curve.points.last {

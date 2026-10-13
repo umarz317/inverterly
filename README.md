@@ -67,6 +67,12 @@ The app looks for the file in this order:
 
 If the file is in Documents, Desktop or Downloads, macOS asks once whether InverterBar may read that folder. If you say no, the panel reports that it cannot find the file; change the answer in System Settings under Privacy & Security, Files and Folders.
 
+## History
+
+Open **History** in the panel for how much solar you made, how much came from the grid and how much you used (the load), in kWh. **Days** lists each day of this month with a month total; **Months** adds up every month the cloud still has.
+
+Each day is added up from the logger's 5-minute readings, which matches the cloud's own daily solar figure to within about 1%. Grid is estimated, as in the details list. A finished day is read once and kept in `~/Library/Application Support/InverterBar/history.json`; only today is read again. Sign out deletes it.
+
 ## Options
 
 The three-dot menu has:
