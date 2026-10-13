@@ -1,6 +1,8 @@
 .build/
 dist/
 *.xcodeproj
+!iOS/Inverterly.xcodeproj
+build/
 .DS_Store
 .swiftpm/
 
@@ -13,3 +15,4 @@ session.json
 # Personal screen recordings stay out of the repository.
 docs/screen-demo*.mp4
 docs/*.mov
+xcuserdata/

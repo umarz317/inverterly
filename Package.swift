@@ -3,10 +3,11 @@ import PackageDescription
 
 let package = Package(
     name: "Inverterly",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .executable(name: "Inverterly", targets: ["Inverterly"]),
         .library(name: "InverterCore", targets: ["InverterCore"]),
+        .library(name: "InverterUI", targets: ["InverterUI"]),
     ],
     targets: [
         // Cloud client, parsing and the data model. No UI.

@@ -1,11 +1,17 @@
 import SwiftUI
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import InverterCore
 
 /// The menu bar panel: header, the live card (hero, load, tiles) and two sections that open in place.
 public struct InverterPanel: View {
     @ObservedObject private var store: AppStore
+    #if os(macOS)
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
+    #endif
 
     public init(store: AppStore) {
         self.store = store
@@ -13,7 +19,10 @@ public struct InverterPanel: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // iOS puts the title in the navigation bar and the options in a Settings sheet.
+            #if os(macOS)
             header
+            #endif
             if let message = store.errorMessage, store.snapshot != nil {
                 Banner(symbol: "exclamationmark.triangle", text: message, tint: .alertAccent)
             }
@@ -22,7 +31,7 @@ public struct InverterPanel: View {
                     Banner(symbol: "bolt.trianglebadge.exclamationmark", text: "Inverter warning: \(warning)", tint: .alertAccent)
                 }
                 if snapshot.isStale() {
-                    Banner(symbol: "clock.badge.exclamationmark", text: staleText(snapshot), tint: .solarAccent)
+                    Banner(symbol: "clock.badge.exclamationmark", text: snapshot.staleText, tint: .solarAccent)
                 }
                 card(snapshot)
             } else if store.signInRequired {
@@ -33,8 +42,12 @@ public struct InverterPanel: View {
                 ReadingView()
             }
         }
+        #if os(macOS)
         .padding(14)
         .frame(width: 380)
+        #else
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        #endif
     }
 
     // MARK: Header
@@ -42,8 +55,8 @@ public struct InverterPanel: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 6) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("Inverterly").font(.system(size: 13, weight: .semibold))
-                Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Text("Inverterly").font(.panel(13, weight: .semibold))
+                Text(store.subtitle).font(.panel(11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
             Button { Task { await store.refresh(force: true) } } label: {
@@ -65,6 +78,7 @@ public struct InverterPanel: View {
                 Picker(selection: $store.heroStyle) {
                     ForEach(HeroStyle.selectable) { Label($0.title, systemImage: $0.symbol).tag($0) }
                 } label: { Label("Illustration", systemImage: "photo") }
+                #if os(macOS)
                 Picker(selection: $store.metric) {
                     ForEach(MenuBarMetric.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
                 } label: { Label("Menu bar shows", systemImage: "menubar.rectangle") }
@@ -76,50 +90,71 @@ public struct InverterPanel: View {
                         Label("Open at login", systemImage: "power")
                     }
                 }
+                #endif
                 Divider()
                 if !store.signInRequired {
                     Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { Task { await store.signOut() } }
                 }
+                #if os(macOS)
                 Button("Quit Inverterly", systemImage: "xmark.rectangle") { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")
+                #endif
             } label: {
-                Image(systemName: "ellipsis").font(.system(size: 13, weight: .medium))
+                Image(systemName: "ellipsis").font(.panel(13, weight: .medium))
                     .frame(width: 26, height: 26).contentShape(Rectangle())
             }
+            #if os(macOS)
             .menuStyle(.borderlessButton)
+            #endif
             .menuIndicator(.hidden)
             .fixedSize()
             .help("Options")
         }
     }
 
-    private var subtitle: String {
-        guard let snapshot = store.snapshot else { return store.errorMessage == nil ? "Connecting…" : "Not connected" }
-        var parts: [String] = []
-        if let name = store.selectedDeviceName { parts.append(name) }
-        if let rated = snapshot.ratedPowerW, rated > 0 {
-            parts.append("\(PowerFormat.kilowatts(rated)) inverter")
-        }
-        if let time = snapshot.deviceTime ?? Optional(snapshot.fetchedAt) {
-            parts.append("Updated \(time.formatted(date: .omitted, time: .shortened))")
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    private func staleText(_ snapshot: EnergySnapshot) -> String {
-        guard let time = snapshot.deviceTime else { return "The logger has stopped reporting." }
-        return "The logger last reported \(time.formatted(.relative(presentation: .named))). Numbers may be old."
-    }
-
     // MARK: Card
 
     private func card(_ snapshot: EnergySnapshot) -> some View {
+        Group {
+            #if os(macOS)
+            // One card on the Mac, the sections opening in place under the live reading.
+            VStack(alignment: .leading, spacing: 0) {
+                live(snapshot).padding(.bottom, 6)
+                todaySection(snapshot)
+                Divider().opacity(0.5)
+                historySection
+                Divider().opacity(0.5)
+                detailsSection(snapshot)
+            }
+            .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 4)
+            .background(Color.panelCard, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            #else
+            // A card each on the phone, with room between them.
+            VStack(spacing: 16) {
+                live(snapshot).padding(16).phoneCard()
+                todaySection(snapshot).padding(.horizontal, 16).padding(.bottom, store.showToday ? 12 : 0).phoneCard()
+                historySection.padding(.horizontal, 16).padding(.bottom, store.showHistory ? 12 : 0).phoneCard()
+                detailsSection(snapshot).padding(.horizontal, 16).padding(.bottom, store.showDetails ? 12 : 0).phoneCard()
+            }
+            #endif
+        }
+        .animation(.snappy, value: snapshot.mode)
+        .onChange(of: store.showToday) { _, open in if open { Task { await store.loadToday() } } }
+        .onChange(of: store.showHistory) { _, open in if open { Task { await store.loadHistory() } } }
+        .task {
+            if store.showToday { await store.loadToday() }
+            if store.showHistory { await store.loadHistory() }
+        }
+    }
+
+    /// The mode, the hero, the load and the four tiles.
+    private func live(_ snapshot: EnergySnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(snapshot.mode.label).font(.system(size: 13, weight: .semibold))
+                    Text(snapshot.mode.label).font(.panel(13, weight: .semibold))
                         .contentTransition(.opacity)
-                    Text(statusLine(snapshot)).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(snapshot.statusLine).font(.panel(11)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
                 BatteryRing(percent: snapshot.batteryPercent, powerW: snapshot.batteryPowerW)
@@ -132,34 +167,37 @@ public struct InverterPanel: View {
                 .padding(.bottom, 6)
 
             loadReadout(snapshot)
-            LoadGauge(fraction: loadFraction(snapshot), ratedW: snapshot.ratedPowerW)
+            LoadGauge(fraction: snapshot.loadFraction, ratedW: snapshot.ratedPowerW)
                 .padding(.top, 6).padding(.bottom, 12)
 
-            tiles(snapshot).padding(.bottom, 6)
+            tiles(snapshot)
+        }
+    }
 
+    private func todaySection(_ snapshot: EnergySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             SectionRow(title: "Today", trailing: todaySummary(snapshot), open: $store.showToday)
             if store.showToday {
                 TodaySection(store: store).padding(.bottom, 8).transition(.opacity)
             }
-            Divider().opacity(0.5)
+        }
+    }
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 0) {
             SectionRow(title: "History", trailing: historySummary, open: $store.showHistory)
             if store.showHistory {
                 HistorySection(store: store).padding(.bottom, 8).transition(.opacity)
             }
-            Divider().opacity(0.5)
+        }
+    }
+
+    private func detailsSection(_ snapshot: EnergySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             SectionRow(title: "Details", trailing: nil, open: $store.showDetails)
             if store.showDetails {
                 DetailsSection(snapshot: snapshot).padding(.bottom, 4).transition(.opacity)
             }
-        }
-        .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 4)
-        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .animation(.snappy, value: snapshot.mode)
-        .onChange(of: store.showToday) { _, open in if open { Task { await store.loadToday() } } }
-        .onChange(of: store.showHistory) { _, open in if open { Task { await store.loadHistory() } } }
-        .task {
-            if store.showToday { await store.loadToday() }
-            if store.showHistory { await store.loadHistory() }
         }
     }
 
@@ -184,41 +222,25 @@ public struct InverterPanel: View {
         return PowerFormat.kWh(days.reduce(0) { $0 + $1.solarKWh }) + " solar this month"
     }
 
-    private func statusLine(_ snapshot: EnergySnapshot) -> String {
-        var parts: [String] = []
-        if let percent = snapshot.batteryPercent {
-            let power = snapshot.batteryPowerW
-            let verb = power > 30 ? "charging" : power < -30 ? "discharging" : "idle"
-            parts.append("Battery \(Int(percent.rounded()))%, \(verb)")
-        }
-        parts.append(snapshot.gridPresent ? "grid available" : "grid outage")
-        return parts.joined(separator: " · ")
-    }
-
-    private func loadFraction(_ snapshot: EnergySnapshot) -> Double {
-        if let rated = snapshot.ratedPowerW, rated > 0 { return min(1, max(0, snapshot.loadPowerW / rated)) }
-        return min(1, max(0, (snapshot.loadPercent ?? 0) / 100))
-    }
-
     private func loadReadout(_ snapshot: EnergySnapshot) -> some View {
         let parts = PowerFormat.split(snapshot.loadPowerW)
         return HStack(alignment: .firstTextBaseline, spacing: 4) {
             Text(parts.number)
-                .font(.system(size: 34, weight: .light)).monospacedDigit()
+                .font(.panel(34, weight: .light)).monospacedDigit()
                 .contentTransition(.numericText(value: snapshot.loadPowerW))
-            Text(parts.unit).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
-            Text("load").font(.system(size: 11)).foregroundStyle(.tertiary).padding(.leading, 2)
+            Text(parts.unit).font(.panel(14, weight: .medium)).foregroundStyle(.secondary)
+            Text("load").font(.panel(11)).foregroundStyle(.faint).padding(.leading, 2)
             Spacer(minLength: 8)
-            Text("\(Int((loadFraction(snapshot) * 100).rounded()))% of capacity")
-                .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
-                .contentTransition(.numericText(value: loadFraction(snapshot)))
+            Text("\(Int((snapshot.loadFraction * 100).rounded()))% of capacity")
+                .font(.panel(11)).monospacedDigit().foregroundStyle(.secondary)
+                .contentTransition(.numericText(value: snapshot.loadFraction))
         }
         .animation(.snappy, value: snapshot.loadPowerW)
     }
 
     private func tiles(_ snapshot: EnergySnapshot) -> some View {
         let battery = snapshot.batteryPowerW
-        return HStack(spacing: 6) {
+        return HStack(spacing: PanelScale.scaled(6)) {
             StatTile(symbol: MenuBarMetric.solarSymbol(snapshot), caption: "Solar",
                      value: PowerFormat.watts(snapshot.pvPowerW),
                      detail: snapshot.pvVoltage.map { String(format: "%.0f V", $0) } ?? "–",
@@ -240,6 +262,46 @@ public struct InverterPanel: View {
     }
 }
 
+public extension AppStore {
+    /// The inverter, its rating and when it last reported, for under the app's name.
+    var subtitle: String {
+        guard let snapshot else { return errorMessage == nil ? "Connecting…" : "Not connected" }
+        var parts: [String] = []
+        if let name = selectedDeviceName { parts.append(name) }
+        if let rated = snapshot.ratedPowerW, rated > 0 {
+            parts.append("\(PowerFormat.kilowatts(rated)) inverter")
+        }
+        if let time = snapshot.deviceTime ?? Optional(snapshot.fetchedAt) {
+            parts.append("Updated \(time.formatted(date: .omitted, time: .shortened))")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+extension EnergySnapshot {
+    /// The battery and the grid in a few words: "Battery 78%, charging · grid available".
+    var statusLine: String {
+        var parts: [String] = []
+        if let percent = batteryPercent {
+            let verb = batteryPowerW > 30 ? "charging" : batteryPowerW < -30 ? "discharging" : "idle"
+            parts.append("Battery \(Int(percent.rounded()))%, \(verb)")
+        }
+        parts.append(gridPresent ? "grid available" : "grid outage")
+        return parts.joined(separator: " · ")
+    }
+
+    /// The load as a share of the inverter's rating, 0...1.
+    var loadFraction: Double {
+        if let rated = ratedPowerW, rated > 0 { return min(1, max(0, loadPowerW / rated)) }
+        return min(1, max(0, (loadPercent ?? 0) / 100))
+    }
+
+    var staleText: String {
+        guard let time = deviceTime else { return "The logger has stopped reporting." }
+        return "The logger last reported \(time.formatted(.relative(presentation: .named))). Numbers may be old."
+    }
+}
+
 public extension PowerFormat {
     /// "6 kW", "3.5 kW" for a rating.
     static func kilowatts(_ watts: Double) -> String {
@@ -250,8 +312,9 @@ public extension PowerFormat {
 
 // MARK: - Sections
 
-private struct TodaySection: View {
+struct TodaySection: View {
     @ObservedObject var store: AppStore
+    var chartHeight = PanelScale.scaled(96)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -261,16 +324,16 @@ private struct TodaySection: View {
                 } else if store.todayLoading {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text("Loading today's readings…").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text("Loading today's readings…").font(.panel(11)).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
                 } else {
                     Text(store.todayError ?? "No readings for today yet.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(.panel(11)).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
-            .frame(height: 96)
+            .frame(height: chartHeight)
 
             if let curve = store.today, !curve.points.isEmpty {
                 let totals = curve.totals()
@@ -280,7 +343,7 @@ private struct TodaySection: View {
     }
 }
 
-private struct HistorySection: View {
+struct HistorySection: View {
     @ObservedObject var store: AppStore
 
     var body: some View {
@@ -295,7 +358,7 @@ private struct HistorySection: View {
             let listed = rows.filter { !$0.live }
             if rows.isEmpty {
                 Text(store.historyLoading ? "Reading history…" : store.historyError ?? "No history yet.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .font(.panel(11)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 120)
             } else {
                 HistorySummary(title: store.historyTab == .days ? "This month" : "Last \(rows.count) months",
@@ -303,18 +366,23 @@ private struct HistorySection: View {
                                load: rows.reduce(0) { $0 + $1.load })
                 VStack(spacing: 0) {
                     HistoryHeader()
+                    let scale = listed.map { $0.solar + $0.grid }.max() ?? 0
+                    let list = LazyVStack(spacing: 0) {
+                        ForEach(listed) { HistoryRow(row: $0, scale: scale).transition(.opacity.combined(with: .move(edge: .top))) }
+                    }
+                    .animation(.smooth, value: listed.map(\.id))
+                    #if os(macOS)
                     ScrollView {
-                        let scale = listed.map { $0.solar + $0.grid }.max() ?? 0
-                        LazyVStack(spacing: 0) {
-                            ForEach(listed) { HistoryRow(row: $0, scale: scale).transition(.opacity.combined(with: .move(edge: .top))) }
-                        }
-                        .animation(.smooth, value: listed.map(\.id))
-                        .padding(.bottom, 10)
+                        list.padding(.bottom, 10)
                     }
                     .frame(height: 176)
                     // Fade the last row instead of cutting it in half, so it reads as scrollable.
                     .mask(LinearGradient(stops: [.init(color: .black, location: 0.88), .init(color: .clear, location: 1)],
                                          startPoint: .top, endPoint: .bottom))
+                    #else
+                    // The whole screen scrolls on iOS, so the rows are laid out in full.
+                    list
+                    #endif
                 }
             }
 
@@ -328,7 +396,7 @@ private struct HistorySection: View {
                     Text("All values in kWh. Grid is estimated from the logger's readings.")
                 }
             }
-            .font(.system(size: 10)).foregroundStyle(.tertiary)
+            .font(.panel(10)).foregroundStyle(.faint)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -404,7 +472,7 @@ private struct CountingKWh: View {
 }
 
 /// The period's totals, and how much of the energy came from the sun.
-private struct HistorySummary: View {
+struct HistorySummary: View {
     let title: String
     let solar: Double
     let grid: Double
@@ -413,29 +481,32 @@ private struct HistorySummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(title).font(.panel(11)).foregroundStyle(.secondary)
                 Spacer()
                 CountingKWh(value: solar, percentOf: solar + grid)
-                    .font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(Color.solarText)
+                    .font(.panel(11, weight: .medium)).monospacedDigit()
             }
-            // No box of its own: the panel is already glass, so colour carries the grouping instead.
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                stat("Solar", solar, .solarText)
-                stat("Grid", grid, .gridText)
-                stat("Load", load, .primary)
+                stat("Solar", solar, .solarMark)
+                stat("Grid", grid, .gridMark)
+                stat("Load", load, nil)
             }
             ShareBar(solar: solar, grid: grid, scale: solar + grid).frame(height: 4)
         }
         .padding(.vertical, 2)
     }
 
-    private func stat(_ caption: String, _ value: Double, _ tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(caption).font(.system(size: 10)).foregroundStyle(.secondary)
+    /// A total in ink, its series named by the dot beside the caption (none for load).
+    private func stat(_ caption: String, _ value: Double, _ mark: Color?) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 5) {
+                if let mark { Circle().fill(mark).frame(width: PanelScale.scaled(6), height: PanelScale.scaled(6)) }
+                Text(caption).font(.panel(10)).foregroundStyle(.secondary)
+            }
             HStack(alignment: .firstTextBaseline, spacing: 2) {
-                CountingKWh(value: value).font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .monospacedDigit().foregroundStyle(tint)
-                Text("kWh").font(.system(size: 10)).foregroundStyle(.tertiary)
+                CountingKWh(value: value).font(.panel(17, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text("kWh").font(.panel(10)).foregroundStyle(.faint)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -443,14 +514,21 @@ private struct HistorySummary: View {
 }
 
 extension Color {
-    /// The solar and grid accents as text: the pastel accents in dark mode, deeper shades that stay
-    /// readable on a light panel.
-    static let solarText = adaptive(dark: NSColor(Color.solarAccent), light: NSColor(red: 0.74, green: 0.48, blue: 0.0, alpha: 1))
-    static let gridText = adaptive(dark: NSColor(Color.gridAccent), light: NSColor(red: 0.13, green: 0.42, blue: 0.86, alpha: 1))
+    /// Solar and grid in the bars, chart and legends. Checked as a pair for colour-blind separation and
+    /// 3:1 contrast against the card in both modes; numbers stay in ink, the colour marks which is which.
+    #if os(macOS)
+    static let solarMark = adaptive(dark: NSColor(hex: 0xD4780A), light: NSColor(hex: 0xD4780A))
+    static let gridMark = adaptive(dark: NSColor(hex: 0x6A7EE8), light: NSColor(hex: 0x5A6BDB))
 
     private static func adaptive(dark: NSColor, light: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light })
     }
+    #else
+    // On the phone, the system palette: solar is the one colour, the grid a neutral grey as the
+    // "other" source, so the screen reads like Apple's own charts.
+    static let solarMark = Color(uiColor: .systemOrange)
+    static let gridMark = Color(uiColor: .systemGray)
+    #endif
 }
 
 /// Solar then grid, side by side, each as long as its share of `scale`.
@@ -464,9 +542,9 @@ private struct ShareBar: View {
         GeometryReader { proxy in
             // Starts empty and grows with the numbers; later changes animate with them.
             let unit = scale > 0 && grown ? proxy.size.width / scale : 0
-            HStack(spacing: 1) {
-                if solar > 0 { Capsule().fill(Color.solarText).frame(width: max(2, solar * unit)) }
-                if grid > 0 { Capsule().fill(Color.gridText).frame(width: max(2, grid * unit)) }
+            HStack(spacing: 2) {
+                if solar > 0 { Capsule().fill(Color.solarMark).frame(width: max(2, solar * unit)) }
+                if grid > 0 { Capsule().fill(Color.gridMark).frame(width: max(2, grid * unit)) }
                 Spacer(minLength: 0)
             }
             .background(Capsule().fill(.primary.opacity(0.07)))
@@ -477,8 +555,8 @@ private struct ShareBar: View {
 }
 
 private enum HistoryColumns {
-    static let label: CGFloat = 70
-    static let number: CGFloat = 42
+    static let label = PanelScale.scaled(70)
+    static let number = PanelScale.scaled(42)
 }
 
 private struct HistoryHeader: View {
@@ -486,12 +564,26 @@ private struct HistoryHeader: View {
         HStack(spacing: 8) {
             Spacer().frame(width: HistoryColumns.label)
             Spacer(minLength: 0)
-            Text("Solar").foregroundStyle(Color.solarText).frame(width: HistoryColumns.number, alignment: .trailing)
-            Text("Grid").foregroundStyle(Color.gridText).frame(width: HistoryColumns.number, alignment: .trailing)
+            ColumnTitle(text: "Solar", mark: .solarMark)
+            ColumnTitle(text: "Grid", mark: .gridMark)
             Text("Load").frame(width: HistoryColumns.number, alignment: .trailing)
         }
-        .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+        .font(.panel(10, weight: .medium)).foregroundStyle(.secondary)
         .padding(.bottom, 2)
+    }
+}
+
+/// A history column's name with its series dot.
+private struct ColumnTitle: View {
+    let text: String
+    let mark: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle().fill(mark).frame(width: PanelScale.scaled(5), height: PanelScale.scaled(5))
+            Text(text)
+        }
+        .frame(width: HistoryColumns.number, alignment: .trailing)
     }
 }
 
@@ -517,14 +609,14 @@ private struct HistoryRow: View {
             CountingKWh(value: row.load).frame(width: HistoryColumns.number, alignment: .trailing)
                 .fontWeight(.medium)
         }
-        .font(.system(size: 11)).monospacedDigit()
+        .font(.panel(11)).monospacedDigit()
         .foregroundStyle(row.live ? .secondary : .primary)
-        .padding(.vertical, 4.5)
+        .padding(.vertical, PanelScale.scaled(4.5))
         .help(row.live ? "So far today" : "")
     }
 }
 
-private struct DetailsSection: View {
+struct DetailsSection: View {
     let snapshot: EnergySnapshot
 
     var body: some View {
@@ -555,10 +647,10 @@ private struct DetailsSection: View {
 
     private func row(_ title: String, _ values: [String?]) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(title).font(.panel(11)).foregroundStyle(.secondary)
             Spacer(minLength: 12)
             Text(values.compactMap { $0 }.joined(separator: "  ·  "))
-                .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                .font(.panel(11, weight: .medium)).monospacedDigit()
         }
     }
 }

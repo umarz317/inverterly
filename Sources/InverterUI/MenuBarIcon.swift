@@ -1,5 +1,7 @@
 import SwiftUI
+#if os(macOS)
 import AppKit
+#endif
 import InverterCore
 
 /// The menu bar glyph, the app icon in small: a sun rising over a sine wave. The sun shows while the
@@ -8,6 +10,10 @@ import InverterCore
 /// and the rays twinkle. Drawn as a template image so macOS tints it for any menu bar.
 public enum MenuBarIcon {
     public static let phases = 4
+}
+
+#if os(macOS)
+extension MenuBarIcon {
 
     /// Symbol-and-number pairs drawn as one template image, for two readings side by side
     /// ("☀ 3.42 kW  🔌 600 W"). Drawn black; macOS tints it for the menu bar like the glyph.
@@ -104,3 +110,4 @@ public enum MenuBarIcon {
         return image
     }
 }
+#endif

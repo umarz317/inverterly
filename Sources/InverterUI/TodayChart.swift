@@ -9,13 +9,21 @@ struct TodayChart: View {
         VStack(alignment: .leading, spacing: 4) {
             Canvas { canvas, size in draw(&canvas, size: size) }
                 .accessibilityLabel("Chart of today's solar and load power")
-            HStack(spacing: 10) {
-                Text("Peak").font(.system(size: 10)).foregroundStyle(.tertiary)
-                legend(color: .solarText, name: "Solar", watts: curve.peakPvW)
-                legend(color: .gridText, name: "Grid", watts: curve.peakGridW)
-                legend(color: .primary.opacity(0.75), name: "Load", watts: curve.peakLoadW)
-                Spacer(minLength: 0)
+            // The "Peak" caption goes first when the row is too narrow, rather than breaking mid-word.
+            ViewThatFits(in: .horizontal) {
+                legendRow(caption: true)
+                legendRow(caption: false)
             }
+        }
+    }
+
+    private func legendRow(caption: Bool) -> some View {
+        HStack(spacing: 10) {
+            if caption { Text("Peak").font(.panel(10)).foregroundStyle(.faint).fixedSize() }
+            legend(color: .solarMark, name: "Solar", watts: curve.peakPvW)
+            legend(color: .gridMark, name: "Grid", watts: curve.peakGridW)
+            legend(color: .primary.opacity(0.75), name: "Load", watts: curve.peakLoadW)
+            Spacer(minLength: 0)
         }
     }
 
@@ -25,14 +33,14 @@ struct TodayChart: View {
             Text(name).foregroundStyle(.secondary)
             Text(PowerFormat.watts(watts)).monospacedDigit()
         }
-        .font(.system(size: 10)).lineLimit(1).fixedSize()
+        .font(.panel(10)).lineLimit(1).fixedSize()
     }
 
     private func draw(_ canvas: inout GraphicsContext, size: CGSize) {
         guard !curve.isEmpty else { return }
         // The day runs midnight to midnight in the plant's time zone, which the curve already knows.
         let dayStart = curve.dayStart
-        let labelBand: CGFloat = 12
+        let labelBand = PanelScale.scaled(12)
         let plot = CGRect(x: 0, y: 2, width: size.width, height: size.height - labelBand - 2)
         let top = niceCeiling(max(curve.peakPvW, curve.peakLoadW, curve.peakGridW, 500))
         let ink = Color.primary
@@ -55,11 +63,11 @@ struct TodayChart: View {
             tick.move(to: CGPoint(x: px, y: plot.maxY)); tick.addLine(to: CGPoint(x: px, y: plot.maxY + 3))
             canvas.stroke(tick, with: .color(ink.opacity(0.2)), lineWidth: 1)
             let label = hour == 12 ? "12 pm" : hour < 12 ? "\(hour) am" : "\(hour - 12) pm"
-            canvas.draw(Text(label).font(.system(size: 9)).foregroundStyle(ink.opacity(0.4)),
-                        at: CGPoint(x: px, y: plot.maxY + 8), anchor: .center)
+            canvas.draw(Text(label).font(.panel(9)).foregroundStyle(ink.opacity(PanelScale.axisInk)),
+                        at: CGPoint(x: px, y: plot.maxY + PanelScale.scaled(8)), anchor: .center)
         }
-        canvas.draw(Text(PowerFormat.kilowatts(top)).font(.system(size: 9)).foregroundStyle(ink.opacity(0.4)),
-                    at: CGPoint(x: plot.minX, y: plot.minY + 4), anchor: .leading)
+        canvas.draw(Text(PowerFormat.kilowatts(top)).font(.panel(9)).foregroundStyle(ink.opacity(PanelScale.axisInk)),
+                    at: CGPoint(x: plot.minX, y: plot.minY + PanelScale.scaled(4)), anchor: .leading)
 
         func trace(_ watts: KeyPath<DayCurvePoint, Double>) -> Path {
             var path = Path()
@@ -77,14 +85,14 @@ struct TodayChart: View {
             area.addLine(to: CGPoint(x: x(last.time), y: plot.maxY))
             area.addLine(to: CGPoint(x: x(first.time), y: plot.maxY))
             area.closeSubpath()
-            canvas.fill(area, with: .linearGradient(Gradient(colors: [Color.solarAccent.opacity(0.34), Color.solarAccent.opacity(0.04)]),
+            canvas.fill(area, with: .linearGradient(Gradient(colors: [Color.solarMark.opacity(0.30), Color.solarMark.opacity(0.03)]),
                                                     startPoint: CGPoint(x: 0, y: plot.minY), endPoint: CGPoint(x: 0, y: plot.maxY)))
         }
-        canvas.stroke(solar, with: .color(Color.solarAccent.opacity(0.95)), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
+        canvas.stroke(solar, with: .color(Color.solarMark), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
 
         // Grid and load lines.
-        canvas.stroke(trace(\.gridW), with: .color(Color.gridAccent.opacity(0.9)), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
-        canvas.stroke(trace(\.loadW), with: .color(ink.opacity(0.75)), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
+        canvas.stroke(trace(\.gridW), with: .color(Color.gridMark), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+        canvas.stroke(trace(\.loadW), with: .color(ink.opacity(0.75)), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
 
         // "Now" marker at the latest reading.
         if let last = curve.points.last {

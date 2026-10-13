@@ -1,3 +1,4 @@
+#if os(macOS)
 import ServiceManagement
 
 /// Start-at-login through the system login item for the app bundle. Only works from a real
@@ -15,3 +16,4 @@ enum LaunchAtLogin {
         }
     }
 }
+#endif

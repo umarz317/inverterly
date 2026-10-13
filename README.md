@@ -1,8 +1,8 @@
 # Inverterly
 
-> **Fork notice:** Inverterly is a personal fork of [InverterBar](https://github.com/ahkamboh/inverterbar) by Ali Hamza Kamboh, tailored for my own use. It adds in-app sign-in, an inverter switcher for accounts with more than one, daily and monthly solar, grid and load history, and other changes. Release builds are signed with my Developer ID and notarized by me, [umarz317](https://github.com/umarz317). This fork is not affiliated with or supported by the original author; please report issues with it here, not upstream.
+> **Fork notice:** Inverterly is a personal fork of [InverterBar](https://github.com/ahkamboh/inverterbar) by Ali Hamza Kamboh, tailored for my own use. It adds an iPhone and iPad app, in-app sign-in, an inverter switcher for accounts with more than one, daily and monthly solar, grid and load history, and other changes. The Mac release builds are signed with my Developer ID and notarized by me, [umarz317](https://github.com/umarz317). Releases are for the Mac only; the iPhone and iPad app is not distributed, so you build it onto your own iPhone. This fork is not affiliated with or supported by the original author; please report issues with it here, not upstream.
 
-A macOS menu bar app that shows a Voltronic-type solar inverter live: what the panels are making, what the house is drawing, where the battery stands, and whether the grid is up.
+A macOS menu bar app, and an iPhone and iPad app, that show a Voltronic-type solar inverter live: what the panels are making, what the house is drawing, where the battery stands, and whether the grid is up.
 
 <p align="center">
   <img src="docs/inverterly.gif" width="380" alt="The Inverterly panel on solar, on battery and on grid (made-up readings)">
@@ -16,7 +16,8 @@ It only reads. No code path in the app can change an inverter setting. This is a
 
 ## Requirements
 
-- macOS 14 or later, and Xcode's command line tools to build it.
+- macOS 14 or later, and Xcode's command line tools to build the Mac app.
+- For the iPhone app: iOS or iPadOS 17 or later, and Xcode 16 or later to build it.
 - An inverter with a Wi-Fi logger that already reports to DessMonitor, WatchPower or SolarPower.
 - The login you use in that phone app.
 
@@ -35,6 +36,22 @@ This builds a release binary, wraps it as `Inverterly.app`, copies it to `~/Appl
 ```
 
 This builds `dist/Inverterly-<version>.dmg` with the app signed by your Developer ID Application identity (the first one in your keychain, or `INVERTERLY_CODESIGN_IDENTITY`) using the hardened runtime, and signs the DMG too. To notarize and staple it, store notarytool credentials once with `xcrun notarytool store-credentials <name>` and run with `INVERTERLY_NOTARY_PROFILE=<name>`. Without notarization, other Macs show a Gatekeeper warning on first open.
+
+### iPhone and iPad
+
+The iPhone and iPad app (iOS 17 or later) is built from the same libraries as the Mac app and uses the same account. It has three tabs:
+
+- **Now**: the animated energy flow, the load against the inverter's rating, tiles for solar, battery, grid and output, and a details list.
+- **Today**: the share of today's energy from solar, the power curve (drag across it to read any moment), the day's peaks and the battery's charge.
+- **History**: Days for this month or Months going back, with the energy mix, a bar per period and the list.
+
+The gear opens settings: pick the inverter, choose the illustration, sign out. Pull down on any tab to refresh. The app reads only while it is in front; it has no background refresh or widgets.
+
+<p align="center">
+  <img src="docs/ios/inverterly-ios.gif" width="260" alt="The Inverterly iPhone app: Now, Today and History tabs (made-up readings)">
+</p>
+
+There is no release or download for it, and it is not on the App Store: you build it onto your own iPhone or iPad with Xcode and your own signing team. Open `iOS/Inverterly.xcodeproj` in Xcode, choose the **Inverterly iOS** scheme, set your signing team and run it on a simulator or your device. See [iOS/README.md](iOS/README.md) for installing on a real iPhone and for how sign-in is stored.
 
 ## Sign in
 
@@ -127,8 +144,10 @@ swift run InverterProbe
 
 - `Sources/InverterCore`: cloud client, request signing, parsing and the `EnergySnapshot` model. No UI.
 - `Sources/InverterUI`: the status item and panel window, SwiftUI views, menu bar icon, and the illustrations in `Hero/`. Each illustration is one `Canvas` that is a pure function of the reading and the time.
+- `Sources/InverterUI/Phone`: the iPhone and iPad screens, compiled only for iOS.
 - `Sources/Inverterly`: the app entry point.
 - `Sources/InverterProbe`: prints one live reading, the inverters on the account and two days of totals.
+- `iOS`: the Xcode project for the iPhone app. See [iOS/README.md](iOS/README.md).
 
 Run the tests with `swift test`: `Tests/InverterCoreTests` for the cloud client, parsing and history, `Tests/InverterUITests` for the panel's state (history loading, switching inverters). The fixtures are real answers from one inverter with serial numbers and ids replaced.
 

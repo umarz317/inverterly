@@ -1,4 +1,9 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 import InverterCore
 
 // MARK: - Header pieces
@@ -7,7 +12,7 @@ import InverterCore
 struct IconButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
+            .font(.panel(13, weight: .medium))
             .frame(width: 26, height: 26)
             .modifier(PointerDisc(pressed: configuration.isPressed))
     }
@@ -60,8 +65,8 @@ struct Banner: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(tint)
-            Text(text).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+            Image(systemName: symbol).font(.panel(11, weight: .semibold)).foregroundStyle(tint)
+            Text(text).font(.panel(11)).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
@@ -80,7 +85,7 @@ struct ReadingView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "bolt.fill").font(.system(size: 20)).foregroundStyle(.secondary)
+            Image(systemName: "bolt.fill").font(.panel(20)).foregroundStyle(.secondary)
             TimelineView(.animation(minimumInterval: 1.0 / 24, paused: reduceMotion)) { timeline in
                 let beat = timeline.date.timeIntervalSinceReferenceDate * 4.2
                 HStack(spacing: 5) {
@@ -92,11 +97,11 @@ struct ReadingView: View {
                     }
                 }
             }
-            Text("Reading your inverter…").font(.system(size: 12)).foregroundStyle(.secondary)
+            Text("Reading your inverter…").font(.panel(12)).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 44)
-        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.panelCard, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
@@ -123,22 +128,30 @@ struct SignInView: View {
         VStack(spacing: 16) {
             logo
             VStack(spacing: 4) {
-                Text("Sign in").font(.system(size: 17, weight: .semibold))
+                Text("Sign in").font(.panel(17, weight: .semibold))
                 Text("Use the same username and password as in your inverter's phone app.")
-                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    .font(.panel(11.5)).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }
             VStack(spacing: 8) {
+                #if os(macOS)
                 field(TextField("Username", text: $user))
+                #else
+                field(TextField("Username", text: $user).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .textContentType(.username))
+                #endif
                 field(SecureField("Password", text: $password).onSubmit(submit))
                 Toggle("Save password in Keychain", isOn: $inKeychain)
-                    .toggleStyle(.checkbox).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    #if os(macOS)
+                    .toggleStyle(.checkbox)
+                    #endif
+                    .font(.panel(11.5)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(inKeychain ? "The password is kept in your macOS Keychain; the account file holds only the username."
                                      : "The password is kept in ~/.config/inverterly/.env, readable only by you.")
             }
             if let error = store.signInError {
-                Text(error).font(.system(size: 11)).foregroundStyle(Color.alertAccent)
+                Text(error).font(.panel(11)).foregroundStyle(Color.alertAccent)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }
             Button(action: submit) {
@@ -149,23 +162,32 @@ struct SignInView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 22).padding(.vertical, 26)
-        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.panelCard, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     /// The app icon when running from the built app; a sun glyph when there is none (swift run).
+    /// The macOS app's icon, or the iOS app's "Logo" image (iOS cannot load its own app icon by name).
+    private static var appIcon: Image? {
+        #if os(macOS)
+        NSImage(named: "AppIcon").map(Image.init(nsImage:))
+        #else
+        UIImage(named: "Logo").map(Image.init(uiImage:))
+        #endif
+    }
+
     @ViewBuilder private var logo: some View {
-        if let icon = NSImage(named: "AppIcon") {
-            Image(nsImage: icon).resizable().frame(width: 64, height: 64)
+        if let icon = Self.appIcon {
+            icon.resizable().frame(width: 64, height: 64)
                 .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
         } else {
-            Image(systemName: "sun.max.fill").font(.system(size: 30)).foregroundStyle(Color.solarAccent)
+            Image(systemName: "sun.max.fill").font(.panel(30)).foregroundStyle(Color.solarAccent)
                 .frame(width: 64, height: 64)
                 .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         }
     }
 
     private func field(_ view: some View) -> some View {
-        view.textFieldStyle(.roundedBorder).controlSize(.large).font(.system(size: 13))
+        view.textFieldStyle(.roundedBorder).controlSize(.large).font(.panel(13))
     }
 
     private func submit() {
@@ -186,16 +208,16 @@ struct FailedView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: "bolt.slash").font(.system(size: 22, weight: .light)).foregroundStyle(.secondary)
-            Text("Can't read the inverter").font(.system(size: 13, weight: .semibold))
-            Text(message).font(.system(size: 11)).foregroundStyle(.secondary)
+            Image(systemName: "bolt.slash").font(.panel(22, weight: .light)).foregroundStyle(.secondary)
+            Text("Can't read the inverter").font(.panel(13, weight: .semibold))
+            Text(message).font(.panel(11)).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             Button("Try again", action: retry).controlSize(.small).padding(.top, 2)
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 18).padding(.vertical, 28)
-        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.panelCard, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -216,11 +238,11 @@ struct BatteryRing: View {
                         style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Image(systemName: powerW > 30 ? "arrow.up" : powerW < -30 ? "arrow.down" : "minus")
-                .font(.system(size: 10, weight: .bold))
+                .font(.panel(10, weight: .bold))
                 .foregroundStyle(powerW > 30 ? AnyShapeStyle(Color.batteryAccent) : AnyShapeStyle(.primary.opacity(0.75)))
                 .contentTransition(.symbolEffect(.replace))
         }
-        .frame(width: 30, height: 30)
+        .frame(width: PanelScale.scaled(30), height: PanelScale.scaled(30))
         .animation(.snappy, value: fraction)
         .help(helpText)
         .accessibilityLabel(helpText)
@@ -263,10 +285,10 @@ struct LoadGauge: View {
             }
             .frame(height: 13)
             HStack {
-                Text("0").font(.system(size: 9)).foregroundStyle(.tertiary)
+                Text("0").font(.panel(9)).foregroundStyle(.faint)
                 Spacer()
                 if let ratedW, ratedW > 0 {
-                    Text(PowerFormat.kilowatts(ratedW)).font(.system(size: 9)).foregroundStyle(.tertiary)
+                    Text(PowerFormat.kilowatts(ratedW)).font(.panel(9)).foregroundStyle(.faint)
                 }
             }
         }
@@ -286,17 +308,17 @@ struct StatTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Image(systemName: symbol)
-                .font(.system(size: 13))
+                .font(.panel(13))
                 .foregroundStyle(alert ? AnyShapeStyle(Color.alertAccent) : AnyShapeStyle(.secondary))
                 .frame(height: 16, alignment: .leading)
                 .contentTransition(.symbolEffect(.replace))
                 .padding(.bottom, 7)
-            Text(caption).font(.system(size: 10)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 12, weight: .semibold)).monospacedDigit()
+            Text(caption).font(.panel(10)).foregroundStyle(.secondary)
+            Text(value).font(.panel(12, weight: .semibold)).monospacedDigit()
                 .lineLimit(1).minimumScaleFactor(0.75)
                 .foregroundStyle(quiet ? .secondary : .primary)
                 .contentTransition(.numericText())
-            Text(detail).font(.system(size: 10)).monospacedDigit().foregroundStyle(.tertiary)
+            Text(detail).font(.panel(10)).monospacedDigit().foregroundStyle(.faint)
                 .lineLimit(1).minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -316,16 +338,16 @@ struct SectionRow: View {
     var body: some View {
         Button { open.toggle() } label: {
             HStack(spacing: 6) {
-                Text(title).font(.system(size: 12, weight: .medium))
+                Text(title).font(.panel(12, weight: .medium))
                 Spacer(minLength: 8)
                 if let trailing {
-                    Text(trailing).font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+                    Text(trailing).font(.panel(11)).monospacedDigit().foregroundStyle(.secondary)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
+                    .font(.panel(10, weight: .semibold)).foregroundStyle(.faint)
                     .rotationEffect(.degrees(open ? 90 : 0))
             }
-            .padding(.vertical, 9)
+            .padding(.vertical, PanelScale.scaled(9))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

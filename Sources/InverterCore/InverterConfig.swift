@@ -80,7 +80,12 @@ public struct InverterConfig: Sendable, Equatable {
     /// The variable's name from when the app was called InverterBar; still read.
     static let oldEnvPathVariable = "INVERTERBAR_ENV"
     public static let envPathDefaultsKey = "envPath"
+    #if os(macOS)
     public static let defaultEnvPath = "~/.config/inverterly/.env"
+    #else
+    /// An iOS app can only write inside Library, Documents and tmp in its container.
+    public static let defaultEnvPath = "~/Library/Application Support/Inverterly/.env"
+    #endif
     /// Also looked in, for people who already keep the account in the inverter-control Node project.
     public static let legacyEnvPath = "~/Documents/inverter-control/.env"
 
@@ -209,7 +214,7 @@ public struct InverterConfig: Sendable, Equatable {
     /// Moves what the app kept under its old name, InverterBar, to where it looks now:
     /// `~/.config/inverterbar` and `~/Library/Application Support/InverterBar`. A folder is moved only
     /// when the new one does not exist yet, so nothing is ever overwritten.
-    public static func moveFilesFromOldName(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+    public static func moveFilesFromOldName(home: URL = URL(fileURLWithPath: NSHomeDirectory())) {
         let moves = [(".config/inverterbar", ".config/inverterly"),
                      ("Library/Application Support/InverterBar", "Library/Application Support/Inverterly")]
         for (old, new) in moves {

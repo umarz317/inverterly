@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import SwiftUI
 import Combine
@@ -458,3 +459,4 @@ final class PanelWindow: NSPanel {
         return super.performKeyEquivalent(with: event)
     }
 }
+#endif

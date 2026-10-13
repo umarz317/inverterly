@@ -95,8 +95,16 @@ public enum HeroMath {
 
 public extension Color {
     /// Restrained accents for the energy sources. Heroes stay mostly monochrome ink and use these sparingly.
+    #if os(iOS)
+    // The phone uses the system palette, matching its charts: orange sun, grey grid, green battery.
+    static let solarAccent = Color(uiColor: .systemOrange)
+    static let batteryAccent = Color(uiColor: .systemGreen)
+    static let gridAccent = Color(uiColor: .systemGray)
+    static let alertAccent = Color(uiColor: .systemRed)
+    #else
     static let solarAccent = Color(red: 1.00, green: 0.78, blue: 0.36)
     static let batteryAccent = Color(red: 0.45, green: 0.86, blue: 0.62)
     static let gridAccent = Color(red: 0.50, green: 0.72, blue: 1.00)
     static let alertAccent = Color(red: 1.00, green: 0.50, blue: 0.42)
+    #endif
 }
