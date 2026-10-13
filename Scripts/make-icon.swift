@@ -1,4 +1,4 @@
-// Draws the app icon (a sun rising over a level bar) into an .iconset folder.
+// Draws the app icon (a sun rising over a sine wave) into an .iconset folder.
 //   swift Scripts/make-icon.swift <out.iconset>
 import AppKit
 
@@ -20,17 +20,15 @@ func draw(_ pixels: Int) -> Data? {
     NSGradient(colors: [NSColor(red: 0.16, green: 0.23, blue: 0.33, alpha: 1), NSColor(red: 0.06, green: 0.09, blue: 0.14, alpha: 1)])?
         .draw(in: shape, angle: -90)
 
-    // The menu bar glyph (see MenuBarIcon) scaled up 28x and centred on the tile.
-    let u = 28 * s
-    let track = NSRect(x: 512 * s - 9.5 * u, y: 315 * s, width: 19 * u, height: 6 * u)
-    let centre = NSPoint(x: 512 * s, y: track.maxY + 1.4 * u)
-    let radius = 3.9 * u
+    // A sun rising over a sine wave: the inverter turns sunlight into AC.
+    let centre = NSPoint(x: 512 * s, y: 500 * s)
+    let radius = 140 * s
 
     // Warm glow behind the sun, kept inside the tile.
     NSGraphicsContext.saveGraphicsState()
     shape.addClip()
     NSGradient(colors: [NSColor(red: 1, green: 0.78, blue: 0.36, alpha: 0.42), NSColor(red: 1, green: 0.78, blue: 0.36, alpha: 0)])?
-        .draw(fromCenter: centre, radius: 0, toCenter: centre, radius: 360 * s, options: [])
+        .draw(fromCenter: centre, radius: 0, toCenter: centre, radius: 400 * s, options: [])
     NSGraphicsContext.restoreGraphicsState()
 
     let sun = NSColor(red: 1, green: 0.80, blue: 0.40, alpha: 1)
@@ -40,23 +38,28 @@ func draw(_ pixels: Int) -> Data? {
     sun.setFill()
     disc.fill()
     let rays = NSBezierPath()
-    rays.lineWidth = 1.3 * u
+    rays.lineWidth = 36 * s
     rays.lineCapStyle = .round
-    for index in 0..<5 {
-        let angle = CGFloat(index + 1) * .pi / 6        // 30, 60, 90, 120, 150 degrees
-        rays.move(to: NSPoint(x: centre.x + cos(angle) * (radius + 1.5 * u), y: centre.y + sin(angle) * (radius + 1.5 * u)))
-        rays.line(to: NSPoint(x: centre.x + cos(angle) * (radius + 2.8 * u), y: centre.y + sin(angle) * (radius + 2.8 * u)))
+    for degrees in [20, 55, 90, 125, 160] {
+        let angle = CGFloat(degrees) * .pi / 180
+        rays.move(to: NSPoint(x: centre.x + cos(angle) * (radius + 48 * s), y: centre.y + sin(angle) * (radius + 48 * s)))
+        rays.line(to: NSPoint(x: centre.x + cos(angle) * (radius + 104 * s), y: centre.y + sin(angle) * (radius + 104 * s)))
     }
     sun.setStroke()
     rays.stroke()
 
-    // Level bar: a faint track and a solid fill at about two thirds, no outline.
-    let r = track.height / 2
-    NSColor.white.withAlphaComponent(0.22).setFill()
-    NSBezierPath(roundedRect: track, xRadius: r, yRadius: r).fill()
-    NSColor.white.setFill()
-    NSBezierPath(roundedRect: NSRect(x: track.minX, y: track.minY, width: track.width * 0.68, height: track.height),
-                 xRadius: r, yRadius: r).fill()
+    // Two periods of a sine wave across the lower third.
+    let wave = NSBezierPath()
+    wave.lineWidth = 44 * s
+    wave.lineCapStyle = .round
+    wave.lineJoinStyle = .round
+    for step in 0...160 {
+        let t = CGFloat(step) / 160
+        let point = NSPoint(x: (220 + 584 * t) * s, y: (340 + 68 * sin(t * 4 * .pi)) * s)
+        if step == 0 { wave.move(to: point) } else { wave.line(to: point) }
+    }
+    NSColor.white.setStroke()
+    wave.stroke()
 
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])
