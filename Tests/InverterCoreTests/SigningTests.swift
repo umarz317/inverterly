@@ -4,7 +4,10 @@ import XCTest
 /// The Swift signing against vectors produced by the real Node client (see SigningVectors.swift).
 final class SigningTests: XCTestCase {
     private func profile(_ name: String) -> CloudProfile {
-        CloudProfile.all.first { $0.name == name }!
+        var profile = CloudProfile.all.first { $0.name == name }!
+        // These captured Node vectors predate WatchPower's move to the DessMonitor host.
+        if name == "watchpower" { profile.baseURL = "http://android.shinemonitor.com/public/" }
+        return profile
     }
 
     func testSha1MatchesNode() {
@@ -16,25 +19,37 @@ final class SigningTests: XCTestCase {
 
     func testLoginURLMatchesNodeByteForByte() {
         XCTAssertEqual(SigningVectors.logins.count, 4)
-        for vector in SigningVectors.logins {
+        // The legacy Node client signs literal spaces incorrectly. Those cases are checked below.
+        for vector in SigningVectors.logins where !vector.user.contains(" ") {
             let url = DessSigning.loginURLString(profile: profile(vector.profile), username: vector.user,
                                                  password: vector.password, salt: vector.salt)
             XCTAssertEqual(url, vector.url, "login as \"\(vector.user)\"")
         }
     }
 
-    func testLoginSignsTheRawUsernameButSendsItEncoded() {
-        // "solar user+tag@example.com": the URL carries %20 %2B %40, the signature covers the raw text.
+    func testLoginEscapesSpacesInTheSignatureButKeepsOtherCharactersRaw() {
+        let watchpower = DessSigning.loginURLString(profile: .watchpower, username: "First Last",
+                                                   password: "made-up-password", salt: "1700000000000")
+        XCTAssertTrue(watchpower.contains("sign=86cccd4a94acc5cb029fb879972ae5fcf857adb8&"))
+        XCTAssertTrue(watchpower.contains("usr=First%20Last&"))
+        XCTAssertTrue(watchpower.hasPrefix("https://web.dessmonitor.com/public/?"))
+
         let vector = SigningVectors.logins[1]
         let p = profile(vector.profile)
-        let rawAction = "&action=authSource&usr=\(vector.user)&company-key=\(p.companyKey)" + DessSigning.suffix(p)
-        let expected = DessSigning.sha1Hex(vector.salt + DessSigning.sha1Hex(vector.password) + rawAction)
-        XCTAssertTrue(vector.url.contains("sign=\(expected)&"))
-        XCTAssertTrue(vector.url.contains("usr=solar%20user%2Btag%40example.com&"))
+        let url = DessSigning.loginURLString(profile: p, username: vector.user,
+                                            password: vector.password, salt: vector.salt)
+        XCTAssertTrue(url.contains("sign=034a27c491ac5a04777d74a8897cc32c7bed1b92&"))
+        XCTAssertTrue(url.contains("usr=solar%20user%2Btag%40example.com&"))
+        XCTAssertFalse(url.contains("sign=86f2e6fed6d6b28421441562d6beeff9dd923df5&"), "the old literal-space signature was rejected by the cloud")
 
         let encodedAction = "&action=authSource&usr=\(DessSigning.encodeURIComponent(vector.user))&company-key=\(p.companyKey)" + DessSigning.suffix(p)
         let wrong = DessSigning.sha1Hex(vector.salt + DessSigning.sha1Hex(vector.password) + encodedAction)
-        XCTAssertFalse(vector.url.contains(wrong), "signing the encoded username would be the wrong signature")
+        XCTAssertFalse(url.contains(wrong), "only spaces are escaped for signing; @ and + stay raw")
+
+        let unicode = SigningVectors.logins[3]
+        XCTAssertEqual(DessSigning.loginSign(profile: .dessmonitor, username: unicode.user,
+                                            password: unicode.password, salt: unicode.salt),
+                       "2ae24af843a77eae49a0aed1a9ba6d3449a6df59")
     }
 
     func testRequestURLMatchesNodeByteForByte() {

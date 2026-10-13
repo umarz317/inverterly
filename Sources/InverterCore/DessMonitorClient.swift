@@ -68,7 +68,7 @@ public enum DessReadOnly {
 /// The vendor's request signing, ported byte for byte from `lib/shinemonitor.js`.
 ///
 /// Two rules matter and are easy to get wrong:
-/// - Login signs the action string with the RAW username, but sends it `encodeURIComponent`-encoded.
+/// - Login signs the raw username with spaces escaped as `%20`, and sends it `encodeURIComponent`-encoded.
 /// - A signed request signs `&action=...` exactly as it is sent, and does not append the app suffix.
 public enum DessSigning {
     /// Lowercase hex SHA-1 of the UTF-8 bytes. SHA-1 is what the vendor API requires.
@@ -113,7 +113,9 @@ public enum DessSigning {
     }
 
     public static func loginSign(profile: CloudProfile, username: String, password: String, salt: String) -> String {
-        let actionRaw = "&action=authSource&usr=\(username)&company-key=\(profile.companyKey)" + suffix(profile)
+        // The cloud keeps spaces escaped when verifying login; other characters stay raw.
+        let signedUser = username.replacingOccurrences(of: " ", with: "%20")
+        let actionRaw = "&action=authSource&usr=\(signedUser)&company-key=\(profile.companyKey)" + suffix(profile)
         return sha1Hex(salt + sha1Hex(password) + actionRaw)
     }
 

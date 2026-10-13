@@ -27,8 +27,9 @@ def get(url):
 
 def login(user, password):
     salt = str(int(time.time() * 1000))
-    # Signed with the raw username, sent with it URL-encoded.
-    signed = f"&action=authSource&usr={user}&company-key={COMPANY_KEY}{APP}"
+    # Escape spaces for signing; fully URL-encode the username when sending.
+    signed_user = user.replace(" ", "%20")
+    signed = f"&action=authSource&usr={signed_user}&company-key={COMPANY_KEY}{APP}"
     sent = f"&action=authSource&usr={urllib.parse.quote(user, safe='-_.!~*' + chr(39) + '()')}&company-key={COMPANY_KEY}{APP}"
     sign = sha1(salt + sha1(password) + signed)
     dat = get(f"{BASE}?sign={sign}&salt={salt}{sent}")

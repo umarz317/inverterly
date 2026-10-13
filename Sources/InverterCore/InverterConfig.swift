@@ -1,6 +1,6 @@
 import Foundation
 
-/// Which vendor app the client pretends to be. Same three profiles as the Node client
+/// Which vendor app the client pretends to be. Same three app identities as the Node client
 /// (`lib/shinemonitor.js`); the company key is the vendor app's public key, not an account secret.
 public struct CloudProfile: Sendable, Equatable {
     public var name: String
@@ -20,7 +20,7 @@ public struct CloudProfile: Sendable, Equatable {
 
     public static let watchpower = CloudProfile(
         name: "watchpower", appID: "wifiapp.volfw.watchpower", appVersion: "1.0.6.3",
-        companyKey: "bnrl_frRFjEz8Mkn", baseURL: "http://android.shinemonitor.com/public/")
+        companyKey: "bnrl_frRFjEz8Mkn", baseURL: "https://web.dessmonitor.com/public/")
 
     public static let solarpower = CloudProfile(
         name: "solarpower", appID: "com.voltronicpower.solarpower", appVersion: "1.0.6.3",

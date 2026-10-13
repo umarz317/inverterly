@@ -2,7 +2,7 @@
 
 Voltronic-type inverters (sold as Axpert, MPP Solar, and under many other names) report through a Wi-Fi logger to a vendor cloud. The WatchPower, SolarPower and DessMonitor phone apps read that cloud, and so does InverterBar. This page describes the part of the API the app uses.
 
-It is unofficial. Nothing here comes from the vendor: it was worked out from a working client and checked against a live account on 13 October 2026. Only the DessMonitor host was tested. Use your own account, and expect the vendor to change things without notice.
+It is unofficial. Nothing here comes from the vendor: it was worked out from a working client and checked against live DessMonitor and WatchPower accounts on 13 October 2026. Both read successfully through the DessMonitor host. Use your own account, and expect the vendor to change things without notice.
 
 Everything on this page reads. See the last section for what is left out and why.
 
@@ -35,12 +35,12 @@ There are three profiles. Pick the one that matches the phone app you sign in to
 | Profile | Base URL | App id sent | App version sent |
 |---|---|---|---|
 | `dessmonitor` | `https://web.dessmonitor.com/public/` | `wifiapp.volfw.watchpower` | `1.4.6.1` |
-| `watchpower` | `http://android.shinemonitor.com/public/` | `wifiapp.volfw.watchpower` | `1.0.6.3` |
+| `watchpower` | `https://web.dessmonitor.com/public/` | `wifiapp.volfw.watchpower` | `1.0.6.3` |
 | `solarpower` | `http://android.shinemonitor.com/public/` | `com.voltronicpower.solarpower` | `1.0.6.3` |
 
 All three send the company key `bnrl_frRFjEz8Mkn`. That is the phone app's own key and is the same for every user. It is not an account secret.
 
-The last two hosts are plain http, as their phone apps are.
+SolarPower's host is plain http. The legacy WatchPower host, `http://android.shinemonitor.com/public/`, accepted login but returned no device for the tested account. Set `SHINEMONITOR_BASE_URL` to that address only for an account whose device still lives there.
 
 ## The shape of every call
 
@@ -58,7 +58,7 @@ Login is the action `authSource`. It returns a `secret` and a `token` that sign 
 
 ```
 salt   = milliseconds since 1970, as a string
-action = "&action=authSource&usr=" + USERNAME + "&company-key=" + COMPANY_KEY + APP_SUFFIX
+action = "&action=authSource&usr=" + USERNAME.replace(" ", "%20") + "&company-key=" + COMPANY_KEY + APP_SUFFIX
 sign   = sha1( salt + sha1(PASSWORD) + action )
 
 GET {base}?sign={sign}&salt={salt}{action with USERNAME url-encoded}
@@ -72,7 +72,7 @@ GET {base}?sign={sign}&salt={salt}{action with USERNAME url-encoded}
 
 Two details are easy to get wrong:
 
-- The signature is computed over the raw username. The URL carries the username URL-encoded (JavaScript's `encodeURIComponent`). For an email address that changes `@` to `%40` in the URL but not in the signed text.
+- The signature uses the raw username with every space replaced by `%20`. The URL carries the fully URL-encoded username (JavaScript's `encodeURIComponent`). For an email address, `@` becomes `%40` in the URL but stays `@` in the signed text. Signing a literal space returns `ERR_PASSWORD_VERIF_FAIL` even with the correct password; this was verified against a live WatchPower account.
 - `sha1` is lowercase hex of the UTF-8 bytes, and the password is hashed once on its own before it goes into the signature.
 
 A worked example with made-up values, for checking an implementation:
