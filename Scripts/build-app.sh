@@ -21,7 +21,10 @@ cp Scripts/Info.plist "$APP/Contents/Info.plist"
 swift Scripts/make-icon.swift "$PWD/dist/AppIcon.iconset" >/dev/null
 iconutil -c icns "$PWD/dist/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 
-codesign --force --sign "$SIGNER" --identifier com.ahkamboh.inverterbar "$APP"
+# A real identity gets the hardened runtime and a secure timestamp, which notarization requires.
+SIGN_OPTIONS=()
+[[ "$SIGNER" != "-" ]] && SIGN_OPTIONS=(--options runtime --timestamp)
+codesign --force --sign "$SIGNER" "${SIGN_OPTIONS[@]}" --identifier com.loopbreak.inverterbar "$APP"
 codesign --verify --deep --strict "$APP"
 echo "Built $APP"
 
