@@ -329,18 +329,14 @@ public enum SnapshotParser {
         let reports = dat["row"]?.arrayValue ?? []
         guard !reports.isEmpty else { return curve }
 
-        let titles = (dat["title"]?.arrayValue ?? []).map {
-            ($0["title"]?.stringValue ?? $0.stringValue ?? "").trimmingCharacters(in: .whitespaces).lowercased()
-        }
-        func column(_ name: String) -> Int? {
-            titles.firstIndex(of: name)
-                ?? titles.firstIndex(where: { $0.contains(name) && !isNameplate($0) && !$0.contains("second") })
-        }
+        let column = dayColumns(dat)
         guard let timeColumn = column("timestamp") else { throw InverterDataError.missingColumn("Timestamp") }
         let loadColumn = column("ac output active power")
         let pv1Column = column("pv1 input power")
         let pv2Column = column("pv2 input power")
         let batteryColumn = column("battery capacity")
+        let voltageColumn = column("battery voltage"), chargeColumn = column("battery charging current")
+        let dischargeColumn = column("battery discharging current"), gridColumn = column("grid voltage")
 
         var byTime: [Date: DayCurvePoint] = [:]
         for report in reports {
@@ -351,13 +347,72 @@ public enum SnapshotParser {
             }
             guard fields.indices.contains(timeColumn), let stamp = fields[timeColumn].stringValue,
                   let time = parseTimestamp(stamp, calendar: calendar) else { continue }
-            byTime[time] = DayCurvePoint(time: time,
-                                         pvW: (number(pv1Column) ?? 0) + (number(pv2Column) ?? 0),
-                                         loadW: number(loadColumn) ?? 0,
-                                         batteryPercent: number(batteryColumn))
+            let reading = EnergySnapshot(
+                pvPowerW: (number(pv1Column) ?? 0) + (number(pv2Column) ?? 0), loadPowerW: number(loadColumn) ?? 0,
+                batteryVoltage: number(voltageColumn), batteryChargeA: number(chargeColumn) ?? 0,
+                batteryDischargeA: number(dischargeColumn) ?? 0, gridVoltage: number(gridColumn))
+            byTime[time] = DayCurvePoint(time: time, pvW: reading.pvPowerW, loadW: reading.loadPowerW,
+                                         gridW: reading.gridPowerW, batteryPercent: number(batteryColumn))
         }
         curve.points = byTime.values.sorted { $0.time < $1.time }
         return curve
+    }
+
+    /// Finds a column of `queryDeviceDataOneDay` by title.
+    private static func dayColumns(_ dat: JSONValue) -> (String) -> Int? {
+        let titles = (dat["title"]?.arrayValue ?? []).map {
+            ($0["title"]?.stringValue ?? $0.stringValue ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        }
+        return { name in
+            titles.firstIndex(of: name)
+                ?? titles.firstIndex(where: { $0.contains(name) && !isNameplate($0) && !$0.contains("second") })
+        }
+    }
+
+    /// Adds up one day of reports into kWh. Each report counts until the next one, at most ten
+    /// minutes, so a gap in the logger's reports is not filled with the last value. The last report
+    /// counts for five minutes, or until `now` while the day is still going. Nil if the day has no reports.
+    public static func dayTotals(_ dat: JSONValue, day: String, timeZone: TimeZone, complete: Bool, now: Date = Date()) throws -> DayTotals? {
+        let reports = dat["row"]?.arrayValue ?? []
+        guard !reports.isEmpty else { return nil }
+        let calendar = gregorian(timeZone)
+        let column = dayColumns(dat)
+        guard let timeColumn = column("timestamp") else { throw InverterDataError.missingColumn("Timestamp") }
+        let pv1 = column("pv1 input power"), pv2 = column("pv2 input power"), load = column("ac output active power")
+        let voltage = column("battery voltage"), charge = column("battery charging current")
+        let discharge = column("battery discharging current"), grid = column("grid voltage")
+
+        var samples: [(time: Date, reading: EnergySnapshot)] = []
+        for report in reports {
+            guard let fields = report["field"]?.arrayValue ?? report.arrayValue else { continue }
+            func number(_ index: Int?) -> Double? {
+                guard let index, fields.indices.contains(index) else { return nil }
+                return fields[index].looseNumber
+            }
+            guard fields.indices.contains(timeColumn), let stamp = fields[timeColumn].stringValue,
+                  let time = parseTimestamp(stamp, calendar: calendar) else { continue }
+            samples.append((time, EnergySnapshot(
+                pvPowerW: (number(pv1) ?? 0) + (number(pv2) ?? 0), loadPowerW: number(load) ?? 0,
+                batteryVoltage: number(voltage), batteryChargeA: number(charge) ?? 0,
+                batteryDischargeA: number(discharge) ?? 0, gridVoltage: number(grid))))
+        }
+        guard !samples.isEmpty else { return nil }
+        samples.sort { $0.time < $1.time }
+
+        var solarWh = 0.0, gridWh = 0.0, loadWh = 0.0
+        for (index, sample) in samples.enumerated() {
+            let seconds: TimeInterval
+            if index + 1 < samples.count {
+                seconds = min(samples[index + 1].time.timeIntervalSince(sample.time), 600)
+            } else {
+                seconds = complete ? 300 : min(300, max(0, now.timeIntervalSince(sample.time)))
+            }
+            let hours = seconds / 3600
+            solarWh += max(0, sample.reading.pvPowerW) * hours
+            gridWh += sample.reading.gridPowerW * hours
+            loadWh += max(0, sample.reading.loadPowerW) * hours
+        }
+        return DayTotals(day: day, solarKWh: solarWh / 1000, gridKWh: gridWh / 1000, loadKWh: loadWh / 1000, complete: complete)
     }
 
     // MARK: Time

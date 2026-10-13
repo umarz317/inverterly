@@ -178,10 +178,12 @@ public struct InverterConfig: Sendable, Equatable {
     }
 
     /// Forgets the account: removes it from the env file (the file itself goes if nothing else is in
-    /// it) and deletes the saved login session.
-    public static func signOut(path explicit: String? = nil, sessionStore: SessionStore = .standard) throws {
+    /// it) and deletes the saved login session and the daily history.
+    public static func signOut(path explicit: String? = nil, sessionStore: SessionStore = .standard,
+                               historyStore: HistoryStore = .standard) throws {
         let path = resolvePath(explicit)
         sessionStore.clear()
+        historyStore.clear()
         let rest = lines(of: path, without: [Key.user, Key.password, Key.app, Key.pn, Key.sn])
         if rest.contains(where: { !jsTrim($0).isEmpty }) {
             try write(rest, to: path)

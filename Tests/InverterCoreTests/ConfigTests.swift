@@ -42,7 +42,7 @@ final class ConfigTests: ScratchTestCase {
         let path = try write("# mine\nSHINEMONITOR_USER=a\nSHINEMONITOR_PASSWORD=b\nSHINEMONITOR_APP=watchpower\nSHINEMONITOR_PN=P\nOTHER=keep\n")
         try FileManager.default.createDirectory(at: sessionFile.deletingLastPathComponent(), withIntermediateDirectories: true)
         try "{}".write(to: sessionFile, atomically: true, encoding: .utf8)
-        try InverterConfig.signOut(path: path, sessionStore: store)
+        try InverterConfig.signOut(path: path, sessionStore: store, historyStore: .memoryOnly)
         let values = InverterConfig.parseEnv(try String(contentsOfFile: path, encoding: .utf8))
         XCTAssertEqual(values, ["OTHER": "keep"])
         XCTAssertFalse(FileManager.default.fileExists(atPath: sessionFile.path))
@@ -50,7 +50,7 @@ final class ConfigTests: ScratchTestCase {
 
     func testSignOutDeletesAnAccountOnlyFile() throws {
         let path = try write("SHINEMONITOR_USER=a\nSHINEMONITOR_PASSWORD=b\n")
-        try InverterConfig.signOut(path: path, sessionStore: store)
+        try InverterConfig.signOut(path: path, sessionStore: store, historyStore: .memoryOnly)
         XCTAssertFalse(FileManager.default.fileExists(atPath: path))
     }
 

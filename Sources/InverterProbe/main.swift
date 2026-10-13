@@ -100,6 +100,15 @@ do {
         line("today curve", "0 points for \(curve.day) (nothing reported yet today)")
     }
 
+    // Yesterday and today added up (solar, estimated grid, load).
+    for offset in [-1, 0] {
+        let day = SnapshotParser.dayString(for: Date().addingTimeInterval(Double(offset) * 86_400), in: .current)
+        if let totals = try await service.fetchDayTotals(day: day) {
+            line("day", String(format: "\(day) solar %.2f kWh, grid %.2f kWh (estimated), load %.2f kWh%@",
+                                      totals.solarKWh, totals.gridKWh, totals.loadKWh, totals.complete ? "" : " (so far)"))
+        }
+    }
+
     // The same keys Tools/node-reading.mjs prints from the Node client, for Tools/compare-live.sh.
     print("")
     print("node equivalents:")

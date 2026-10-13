@@ -343,6 +343,23 @@ final class ServiceTests: ScratchTestCase {
         }
     }
 
+    // MARK: Day totals
+
+    func testAFinishedDayIsReadOnce() async throws {
+        let first = try await service.fetchDayTotals(day: "2026-10-12")
+        let second = try await service.fetchDayTotals(day: "2026-10-12")
+        XCTAssertEqual(first?.complete, true)
+        XCTAssertEqual(second, first)
+        XCTAssertEqual(cloud.count("queryDeviceDataOneDay"), 1)
+    }
+
+    func testTheDayStillGoingIsReadAgain() async throws {
+        let first = try await service.fetchDayTotals(day: "2026-10-13")
+        _ = try await service.fetchDayTotals(day: "2026-10-13")
+        XCTAssertEqual(first?.complete, false)
+        XCTAssertEqual(cloud.count("queryDeviceDataOneDay"), 2)
+    }
+
     // MARK: Day curve
 
     func testTodayCurveFromTheCapturedDay() async throws {

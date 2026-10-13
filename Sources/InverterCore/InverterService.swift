@@ -7,6 +7,8 @@ public protocol SnapshotProviding: Sendable {
     func fetchSnapshot(force: Bool) async throws -> EnergySnapshot
     /// Today's readings for the small chart.
     func fetchToday() async throws -> DayCurve
+    /// Solar, grid and load energy for one plant day ("2026-10-13"). Nil when the cloud has nothing for it.
+    func fetchDayTotals(day: String) async throws -> DayTotals?
     /// Forget the account, session and readings so the next fetch starts from the account file again.
     func reset() async
 }
@@ -17,6 +19,7 @@ public extension SnapshotProviding {
     }
 
     func reset() async {}
+    func fetchDayTotals(day: String) async throws -> DayTotals? { nil }
 }
 
 /// A provider that always answers with the values it was given. For previews, demos and tests.
@@ -50,6 +53,7 @@ public actor InverterService: SnapshotProviding {
 
     private let envPath: String?
     private let sessionStore: SessionStore
+    private let historyStore: HistoryStore
     private let transport: (any HTTPTransport)?
     private let now: @Sendable () -> Date
     /// How long the side lookups (warning, logger status, plant) may run on after the reading
@@ -71,12 +75,16 @@ public actor InverterService: SnapshotProviding {
     private var snapshotTask: Task<EnergySnapshot, Error>?
     private var curveCache: (at: Date, zone: TimeZone, value: DayCurve)?
     private var curveTask: Task<DayCurve, Error>?
+    private var dayTotals: [String: DayTotals]?
+    /// Days the cloud had nothing for, so a list is not asked again for each of them.
+    private var emptyDays: Set<String> = []
 
     /// Reads the account from the env file on first use (see `InverterConfig.resolvePath`), so a
     /// missing file shows up as an error from `fetchSnapshot()` and is picked up once it exists.
     public init(envPath: String? = nil, sessionStore: SessionStore = .standard) {
         self.envPath = envPath
         self.sessionStore = sessionStore
+        self.historyStore = .standard
         self.transport = nil
         self.now = { Date() }
     }
@@ -87,6 +95,7 @@ public actor InverterService: SnapshotProviding {
     public init(envPath: String? = nil, sessionStore: SessionStore = .standard, transport: any HTTPTransport) {
         self.envPath = envPath
         self.sessionStore = sessionStore
+        self.historyStore = .standard
         self.transport = transport
         self.now = { Date() }
     }
@@ -95,6 +104,7 @@ public actor InverterService: SnapshotProviding {
         self.envPath = nil
         self.config = config
         self.sessionStore = sessionStore
+        self.historyStore = .standard
         self.transport = nil
         self.now = { Date() }
     }
@@ -105,6 +115,7 @@ public actor InverterService: SnapshotProviding {
         self.envPath = nil
         self.config = config
         self.sessionStore = sessionStore
+        self.historyStore = .memoryOnly
         self.transport = transport
         self.now = now
     }
@@ -112,7 +123,7 @@ public actor InverterService: SnapshotProviding {
     /// Drops everything tied to the old account; the next fetch re-reads the env file.
     public func reset() {
         config = nil; client = nil; device = nil; plant = nil
-        snapshotCache = nil; curveCache = nil
+        snapshotCache = nil; curveCache = nil; dayTotals = nil; emptyDays = []
         deviceTask?.cancel(); plantTask?.cancel(); snapshotTask?.cancel(); curveTask?.cancel()
         deviceTask = nil; plantTask = nil; snapshotTask = nil; curveTask = nil
     }
@@ -208,9 +219,7 @@ public actor InverterService: SnapshotProviding {
     private func loadToday() async throws -> DayCurve {
         let client = try loadClient()
         let device = try await loadDevice(client)
-        let plantTask = Task { await self.loadPlant(client, preferID: device.plantID) }
-        let plantInfo = await Self.value(of: plantTask, by: ContinuousClock.now + .seconds(sideLookupGrace)) ?? plant?.info
-        let zone = plantInfo?.timeZone ?? device.timeZone ?? .current
+        let zone = await plantZone(client, device)
         let fetchedAt = now()
         let day = SnapshotParser.dayString(for: fetchedAt, in: zone)
 
@@ -226,7 +235,45 @@ public actor InverterService: SnapshotProviding {
         return curve
     }
 
+    /// Solar, grid and load energy for one plant day. A finished day is read once and kept on disk;
+    /// the day still going is read again every time.
+    public func fetchDayTotals(day: String) async throws -> DayTotals? {
+        let known = dayTotals ?? historyStore.load()
+        dayTotals = known
+        if let hit = known[day], hit.complete { return hit }
+        if emptyDays.contains(day) { return nil }
+
+        let client = try loadClient()
+        let device = try await loadDevice(client)
+        let zone = await plantZone(client, device)
+        let moment = now()
+        let complete = day < SnapshotParser.dayString(for: moment, in: zone)
+        let dat: JSONValue
+        do {
+            dat = try await client.request("queryDeviceDataOneDay&\(device.query)&date=\(day)&i18n=en_US")
+        } catch let error as DessMonitorError where error.isNoRecord {
+            if complete { emptyDays.insert(day) }
+            return nil
+        }
+        guard let totals = try SnapshotParser.dayTotals(dat, day: day, timeZone: zone, complete: complete, now: moment) else {
+            if complete { emptyDays.insert(day) }
+            return nil
+        }
+        var all = dayTotals ?? known
+        all[day] = totals
+        dayTotals = all
+        historyStore.save(all)
+        return totals
+    }
+
     // MARK: Shared lookups
+
+    /// The plant's time zone, waiting a short while for the plant lookup.
+    private func plantZone(_ client: DessMonitorClient, _ device: DeviceRef) async -> TimeZone {
+        let plantTask = Task { await self.loadPlant(client, preferID: device.plantID) }
+        let info = await Self.value(of: plantTask, by: ContinuousClock.now + .seconds(sideLookupGrace)) ?? plant?.info
+        return info?.timeZone ?? device.timeZone ?? .current
+    }
 
     private func loadClient() throws -> DessMonitorClient {
         if let client { return client }
