@@ -3,7 +3,7 @@ import InverterCore
 
 /// "Device": the wall-mounted hybrid inverter is the subject. Solar and grid feed it from the left,
 /// the home and the battery hang off its right side. Its display lights up while it is working and
-/// its output streams toward the house; each conduit carries wisps only while power flows in it.
+/// its output runs to the house; each conduit carries wisps only while power flows in it.
 ///
 /// A pure function of `(frame, now)`: every moving thing is positioned from the reference clock at a
 /// constant rate, so nothing jumps when a new reading arrives or while a flow eases. Speed follows
@@ -61,8 +61,7 @@ private enum DeviceGeo {
     static let solarFrom = CGPoint(x: 79, y: rowTop), solarTo = CGPoint(x: 128, y: rowTop)
     static let gridFrom = CGPoint(x: 62, y: rowBottom), gridTo = CGPoint(x: 128, y: rowBottom)
     static let batteryNear = CGPoint(x: 220, y: rowBottom), batteryFar = CGPoint(x: 276, y: rowBottom)
-    static let streamFrom: CGFloat = 224, streamTo: CGFloat = 288.5
-    static let streamLines = 5
+    static let outputFrom = CGPoint(x: 224, y: rowTop), outputTo = CGPoint(x: 286, y: rowTop)
 
     /// Mode glyphs for the display. An unknown mode shows the load alone.
     static let glyphs: [(mode: InverterMode, symbol: String)] = [
@@ -124,10 +123,8 @@ private struct DeviceState {
     let strength: Double
 
     let solar: DeviceTone, battery: DeviceTone, grid: DeviceTone, alert: DeviceTone
-    /// One tone per output stream line: the mix of sources carrying the load right now.
-    let stream: [DeviceTone]
-    /// 0…1 per output stream line. The fan widens with the load: one line for a trickle, all five from about 1.5 kW.
-    let streamWeight: [Double]
+    /// The output's colour: the sources carrying the load right now, mixed in proportion.
+    let output: DeviceTone
 
     init(frame: HeroFrame, now: Date, dark: Bool, environment: EnvironmentValues) {
         let flows = frame.flows(at: now)
@@ -193,38 +190,13 @@ private struct DeviceState {
         // Load with no source accounted for (rounding in the feed): draw it in plain ink.
         let neutral = dark ? DeviceTone(r: 0.90, g: 0.93, b: 0.97) : DeviceTone(r: 0.24, g: 0.27, b: 0.32)
 
-        let count = DeviceGeo.streamLines, centre = count / 2
-        let amount = Self.amount(flows.loadW)
-        let inner = Self.fade(amount, 0.08, 0.20), outer = Self.fade(amount, 0.35, 0.55)
-        streamWeight = (0..<count).map { line in
-            let ring = abs(line - centre)
-            return ring == 0 ? 1 : ring == 1 ? inner : outer
-        }
-
-        // Split the lines that are showing between the sources, in proportion to what each supplies.
-        let half = 0.5 + inner + outer
         let sources = [(flows.solarW, solarTone), (flows.batteryDischargeW, batteryTone), (gridFlow, gridTone)]
         let total = sources.reduce(0) { $0 + $1.0 }
-        var tones: [DeviceTone] = []
-        for line in 0..<count {
-            guard total > 1 else { tones.append(neutral); continue }
-            let j = Double(line - centre)
-            var lo = min(1, max(0, 0.5 + (j - 0.5) / (2 * half))), hi = min(1, max(0, 0.5 + (j + 0.5) / (2 * half)))
-            if hi - lo < 0.02 {
-                // A line outside the fan (it is faded out) still needs a tone: take the nearest edge.
-                let mid = min(0.99, max(0.01, (lo + hi) / 2))
-                lo = mid - 0.01; hi = mid + 0.01
-            }
-            var r = 0.0, g = 0.0, b = 0.0, start = 0.0
-            for (watts, tone) in sources {
-                let end = start + watts / total
-                let overlap = max(0, min(hi, end) - max(lo, start)) / (hi - lo)
-                r += tone.r * overlap; g += tone.g * overlap; b += tone.b * overlap
-                start = end
-            }
-            tones.append(DeviceTone(r: min(1, r), g: min(1, g), b: min(1, b)))
-        }
-        stream = tones
+        output = total > 1
+            ? DeviceTone(r: sources.reduce(0) { $0 + $1.1.r * $1.0 } / total,
+                         g: sources.reduce(0) { $0 + $1.1.g * $1.0 } / total,
+                         b: sources.reduce(0) { $0 + $1.1.b * $1.0 } / total)
+            : neutral
     }
 
     /// 0…1 "how much", spread evenly over the range this inverter works in: about 0.14 at 100 W, 0.45 at
@@ -258,7 +230,7 @@ private struct DevicePainter {
     private func glows(_ c: inout GraphicsContext) {
         let sunOn = s.shine, chargeOn = s.chargeOn
         guard sunOn > 0.01 || s.loadLevel > 0.01 || (s.dark && s.lcdLevel > 0.01) || chargeOn > 0.01 else { return }
-        let mid = s.stream[DeviceGeo.streamLines / 2]
+        let mid = s.output
         c.drawLayer { glow in
             glow.addFilter(.blur(radius: 6))
             if sunOn > 0.01 {
@@ -273,17 +245,7 @@ private struct DevicePainter {
                           with: .color(ink.opacity(0.22 * s.lcdLevel)))
             }
             if s.loadLevel > 0.01 {
-                // Soft haze of energy leaving the outlet, and the lit window it arrives at.
-                var haze = Path()
-                haze.move(to: CGPoint(x: DeviceGeo.streamFrom - 2, y: DeviceGeo.rowTop - 9))
-                haze.addLine(to: CGPoint(x: DeviceGeo.streamTo - 8, y: DeviceGeo.rowTop - 3))
-                haze.addLine(to: CGPoint(x: DeviceGeo.streamTo - 8, y: DeviceGeo.rowTop + 6))
-                haze.addLine(to: CGPoint(x: DeviceGeo.streamFrom - 2, y: DeviceGeo.rowTop + 9))
-                haze.closeSubpath()
-                let haziness = s.loadLevel * (0.5 + 0.5 * DeviceState.amount(s.loadW))
-                glow.fill(haze, with: .linearGradient(Gradient(colors: [mid.color(0.24 * haziness), mid.color(0.04 * haziness)]),
-                                                      startPoint: CGPoint(x: DeviceGeo.streamFrom, y: DeviceGeo.rowTop),
-                                                      endPoint: CGPoint(x: DeviceGeo.streamTo, y: DeviceGeo.rowTop)))
+                // The lit window the output arrives at.
                 glow.fill(Path(roundedRect: DeviceGeo.window.insetBy(dx: -2, dy: -2), cornerRadius: 3),
                           with: .color(mid.color(0.55 * s.windowLevel)))
             }
@@ -325,9 +287,7 @@ private struct DevicePainter {
             track(a, b, active: s.gridOn)
         }
 
-        // Output: a quiet lead to the house that gives way to the stream once the load is on.
-        track(CGPoint(x: DeviceGeo.streamFrom, y: DeviceGeo.rowTop), CGPoint(x: DeviceGeo.streamTo - 1, y: DeviceGeo.rowTop),
-              active: -0.9 * s.loadLevel)
+        track(DeviceGeo.outputFrom, DeviceGeo.outputTo, active: s.loadLevel)
     }
 
     // MARK: Inverter
@@ -464,8 +424,14 @@ private struct DevicePainter {
             rays.addLine(to: CGPoint(x: sun.x + CGFloat(cos(angle) * outer), y: sun.y + CGFloat(sin(angle) * outer)))
         }
         if shine < 0.99 {
-            c.stroke(disc, with: .color(ink.opacity(0.26 * k * (1 - shine))), lineWidth: 1)
-            c.stroke(rays, with: .color(ink.opacity(0.16 * k * (1 - shine))), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+            // No PV: a crescent moon, like the Solar tile.
+            c.drawLayer { moon in
+                let r: CGFloat = 5.5
+                moon.fill(Path(ellipseIn: CGRect(x: sun.x - r, y: sun.y - r, width: r * 2, height: r * 2)),
+                          with: .color(ink.opacity(0.42 * k * (1 - shine))))
+                moon.blendMode = .destinationOut
+                moon.fill(Path(ellipseIn: CGRect(x: sun.x - r + 3.4, y: sun.y - r - 2.2, width: r * 2, height: r * 2)), with: .color(.black))
+            }
         }
         if shine > 0.01 {
             c.fill(disc, with: .color(s.solar.color(0.95 * shine)))
@@ -515,7 +481,7 @@ private struct DevicePainter {
         let window = Path(roundedRect: DeviceGeo.window, cornerRadius: 1.8, style: .continuous)
         let lit = s.windowLevel
         if lit > 0.01 {
-            let mid = s.stream[DeviceGeo.streamLines / 2]
+            let mid = s.output
             c.fill(window, with: .color(mid.color(0.85 * lit)))
         }
         c.stroke(window, with: .color(ink.opacity(0.24 * k * (1 - lit))), lineWidth: 1)
@@ -603,16 +569,6 @@ private struct DevicePainter {
         }
     }
 
-    private func streamPoint(_ line: Int, _ p: Double) -> CGPoint {
-        let j = Double(line) - Double(DeviceGeo.streamLines - 1) / 2
-        let q = min(1, max(0, p))
-        let ease = q * q * (3 - 2 * q)
-        let y0 = Double(DeviceGeo.rowTop) + j * 4.0, y1 = Double(DeviceGeo.rowTop) + j * 2.1
-        let sway = sin(s.time * 1.5 + Double(line) * 1.9 + p * 4.2) * 1.7 * sin(.pi * q)
-        let x = Double(DeviceGeo.streamFrom) + Double(DeviceGeo.streamTo - DeviceGeo.streamFrom) * p
-        return CGPoint(x: x, y: y0 + (y1 - y0) * ease + sway)
-    }
-
     private func energy(_ c: inout GraphicsContext) {
         func along(_ a: CGPoint, _ b: CGPoint) -> (Double) -> CGPoint {
             { p in CGPoint(x: a.x + (b.x - a.x) * CGFloat(p), y: a.y + (b.y - a.y) * CGFloat(p)) }
@@ -628,11 +584,7 @@ private struct DevicePainter {
             conduit(&e, watts: s.gridW, on: s.gridOn, tone: s.grid, seed: 2, from: DeviceGeo.gridFrom, to: DeviceGeo.gridTo)
             conduit(&e, watts: s.chargeW, on: s.chargeOn, tone: s.battery, seed: 3, from: DeviceGeo.batteryNear, to: DeviceGeo.batteryFar)
             conduit(&e, watts: s.dischargeW, on: s.dischargeOn, tone: s.battery, seed: 4, from: DeviceGeo.batteryFar, to: DeviceGeo.batteryNear)
-            for line in 0..<DeviceGeo.streamLines {
-                wisps(&e, watts: s.loadW, on: s.loadLevel * s.streamWeight[line], tone: s.stream[line], seed: 10 + line,
-                      run: DeviceGeo.streamTo - DeviceGeo.streamFrom, length: 15...28, appear: [0, 0.02, 0.50], jitter: 0.35,
-                      segments: 7, width: 1.6, dot: false) { streamPoint(line, $0) }
-            }
+            conduit(&e, watts: s.loadW, on: s.loadLevel, tone: s.output, seed: 5, from: DeviceGeo.outputFrom, to: DeviceGeo.outputTo)
         }
 
         // Arrowheads at the receiving end, so direction reads in a still frame too.
@@ -648,6 +600,7 @@ private struct DevicePainter {
         chevron(tip: CGPoint(x: DeviceGeo.gridTo.x - 3, y: DeviceGeo.rowBottom), right: true, alpha: s.gridOn)
         chevron(tip: CGPoint(x: DeviceGeo.batteryFar.x - 2, y: DeviceGeo.rowBottom), right: true, alpha: s.chargeOn)
         chevron(tip: CGPoint(x: DeviceGeo.batteryNear.x + 4, y: DeviceGeo.rowBottom), right: false, alpha: s.dischargeOn)
+        chevron(tip: CGPoint(x: DeviceGeo.outputTo.x - 2, y: DeviceGeo.rowTop), right: true, alpha: s.loadLevel)
     }
 
     // MARK: Labels
