@@ -14,6 +14,36 @@ public enum MenuBarIcon {
 
     public enum Activity: Equatable { case idle, charging, discharging, unknown }
 
+    /// Symbol-and-number pairs drawn as one template image, for two readings side by side
+    /// ("☀ 3.42 kW  🔌 600 W"). Drawn black; macOS tints it for the menu bar like the glyph.
+    public static func pairs(_ items: [(symbol: String, text: String)]) -> NSImage {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
+        let pieces = items.map { item in
+            (NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config),
+             NSAttributedString(string: item.text, attributes: attributes))
+        }
+        let gap: CGFloat = 3, between: CGFloat = 9, height: CGFloat = 18
+        let width = pieces.reduce(0) { $0 + ($1.0?.size.width ?? 0) + gap + ceil($1.1.size().width) }
+            + between * CGFloat(max(0, pieces.count - 1))
+        let image = NSImage(size: NSSize(width: ceil(width), height: height), flipped: false) { _ in
+            var x: CGFloat = 0
+            for (symbol, text) in pieces {
+                if let symbol {
+                    symbol.draw(in: NSRect(x: x, y: (height - symbol.size.height) / 2, width: symbol.size.width, height: symbol.size.height))
+                    x += symbol.size.width + gap
+                }
+                let size = text.size()
+                text.draw(at: NSPoint(x: x, y: (height - size.height) / 2))
+                x += ceil(size.width) + between
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
     public static func image(level: Double?, activity: Activity, solar: Bool, phase: Int) -> NSImage {
         let size = NSSize(width: 20, height: 17)
         let image = NSImage(size: size, flipped: false) { _ in

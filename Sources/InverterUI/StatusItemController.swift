@@ -72,14 +72,32 @@ public final class StatusItemController: NSObject {
         let solar = !stale && (reading?.pvPowerW ?? 0) > 20
         let phase = store.animateIcon ? store.iconPhase : 0
 
+        // With a number showing, its own symbol stands beside it; with the icon alone, or no fresh
+        // reading, the app's sun over the level bar.
+        let metricSymbol = store.menuBarText == nil ? nil : reading.map { store.metric.symbol(for: $0) }
+        // Solar and grid together: both symbols and both numbers in one picture, no title.
+        let pair: [(symbol: String, text: String)]? = store.metric == .solarAndGrid && metricSymbol != nil ? reading.map {
+            [(store.metric.symbol(for: $0), PowerFormat.watts($0.pvPowerW)),
+             ($0.gridPresent ? "powerplug" : "bolt.slash", PowerFormat.watts($0.gridPowerW))]
+        } : nil
+
         // Setting the image makes macOS re-render the item for every display, so only do it
         // when the picture would actually differ.
-        let icon = "\(level.map { Int(($0 * 100).rounded()) } ?? -1)|\(activity)|\(solar)|\(phase)"
+        let icon = pair.map { $0.map { "\($0.symbol) \($0.text)" }.joined(separator: "|") } ?? metricSymbol
+            ?? "\(level.map { Int(($0 * 100).rounded()) } ?? -1)|\(activity)|\(solar)|\(phase)"
         if icon != shownIcon {
             shownIcon = icon
-            button.image = MenuBarIcon.image(level: level, activity: activity, solar: solar, phase: phase)
+            if let pair {
+                button.image = MenuBarIcon.pairs(pair)
+            } else if let metricSymbol, let image = NSImage(systemSymbolName: metricSymbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 13, weight: .regular)) {
+                image.isTemplate = true
+                button.image = image
+            } else {
+                button.image = MenuBarIcon.image(level: level, activity: activity, solar: solar, phase: phase)
+            }
         }
-        let title = store.menuBarText ?? ""
+        let title = pair == nil ? store.menuBarText ?? "" : ""
         if button.title != title { button.title = title }
         button.setAccessibilityLabel(accessibilityText(reading, stale: stale))
     }

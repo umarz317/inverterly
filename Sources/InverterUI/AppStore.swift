@@ -4,13 +4,14 @@ import InverterCore
 
 /// What the menu bar shows beside the icon.
 public enum MenuBarMetric: String, CaseIterable, Identifiable, Sendable {
-    case battery, load, solar, none
+    case battery, load, solar, solarAndGrid, none
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .battery: "Battery percent"
         case .load: "Load"
         case .solar: "Solar"
+        case .solarAndGrid: "Solar and grid"
         case .none: "Icon only"
         }
     }
@@ -18,9 +19,32 @@ public enum MenuBarMetric: String, CaseIterable, Identifiable, Sendable {
     public var symbol: String {
         switch self {
         case .battery: "battery.75percent"
-        case .load: "powerplug"
+        case .load: "house"
         case .solar: "sun.max"
+        case .solarAndGrid: "sun.max.circle"
         case .none: "menubar.rectangle"
+        }
+    }
+
+    /// The symbol beside the number in the menu bar, following the reading: the battery's level
+    /// (with a bolt while charging), and a sun for solar that turns to a moon when the panels make nothing.
+    public func symbol(for reading: EnergySnapshot) -> String {
+        switch self {
+        case .battery: reading.batteryPowerW > 30 ? "battery.100percent.bolt" : Self.batterySymbol(reading.batteryPercent)
+        case .load: "house"
+        case .solar, .solarAndGrid: reading.pvPowerW > 20 ? "sun.max" : "moon"
+        case .none: symbol
+        }
+    }
+
+    public static func batterySymbol(_ percent: Double?) -> String {
+        guard let percent else { return "battery.0percent" }
+        switch percent {
+        case ..<13: return "battery.0percent"
+        case ..<38: return "battery.25percent"
+        case ..<63: return "battery.50percent"
+        case ..<88: return "battery.75percent"
+        default: return "battery.100percent"
         }
     }
 }
@@ -338,6 +362,7 @@ public final class AppStore: ObservableObject {
         case .battery: return snapshot.batteryPercent.map { "\(Int($0.rounded()))%" }
         case .load: return PowerFormat.watts(snapshot.loadPowerW)
         case .solar: return PowerFormat.watts(snapshot.pvPowerW)
+        case .solarAndGrid: return "\(PowerFormat.watts(snapshot.pvPowerW)) \(PowerFormat.watts(snapshot.gridPowerW))"
         case .none: return nil
         }
     }

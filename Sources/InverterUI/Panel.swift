@@ -223,7 +223,7 @@ public struct InverterPanel: View {
                      value: PowerFormat.watts(snapshot.pvPowerW),
                      detail: snapshot.pvVoltage.map { String(format: "%.0f V", $0) } ?? "–",
                      quiet: snapshot.pvPowerW < 1)
-            StatTile(symbol: batterySymbol(snapshot.batteryPercent), caption: "Battery",
+            StatTile(symbol: MenuBarMetric.batterySymbol(snapshot.batteryPercent), caption: "Battery",
                      value: snapshot.batteryPercent.map { "\(Int($0.rounded()))%" } ?? "–",
                      detail: abs(battery) > 30 ? "\(battery > 0 ? "+" : "−")\(PowerFormat.watts(battery))"
                          : (snapshot.batteryVoltage.map { String(format: "%.1f V", $0) } ?? "–"),
@@ -236,17 +236,6 @@ public struct InverterPanel: View {
                      value: snapshot.outputVoltage.map { String(format: "%.0f V", $0) } ?? "–",
                      detail: snapshot.outputHz.map { String(format: "%.1f Hz", $0) } ?? "–",
                      quiet: false)
-        }
-    }
-
-    private func batterySymbol(_ percent: Double?) -> String {
-        guard let percent else { return "battery.0percent" }
-        switch percent {
-        case ..<13: return "battery.0percent"
-        case ..<38: return "battery.25percent"
-        case ..<63: return "battery.50percent"
-        case ..<88: return "battery.75percent"
-        default: return "battery.100percent"
         }
     }
 }
