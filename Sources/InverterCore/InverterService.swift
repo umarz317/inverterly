@@ -22,13 +22,9 @@ public extension SnapshotProviding {
         try await fetchSnapshot(force: false)
     }
 
-    func reset() async {}
-    func fetchDayTotals(day: String) async throws -> DayTotals? { nil }
-    func listDevices() async throws -> [DeviceInfo] { [] }
-    func selectDevice(_ id: String) async {}
 }
 
-/// A provider that always answers with the values it was given. For previews, demos and tests.
+/// A provider that always answers with the values it was given. For tests.
 public struct StaticSnapshotProvider: SnapshotProviding {
     public var snapshot: EnergySnapshot
     public var curve: DayCurve
@@ -43,6 +39,10 @@ public struct StaticSnapshotProvider: SnapshotProviding {
     }
 
     public func fetchSnapshot(force: Bool) async throws -> EnergySnapshot { snapshot }
+    public func fetchDayTotals(day: String) async throws -> DayTotals? { nil }
+    public func listDevices() async throws -> [DeviceInfo] { [] }
+    public func selectDevice(_ id: String) async {}
+    public func reset() async {}
     public func fetchToday() async throws -> DayCurve { curve }
 }
 
@@ -86,7 +86,9 @@ public actor InverterService: SnapshotProviding {
     private var snapshotTask: Task<EnergySnapshot, Error>?
     private var curveCache: (at: Date, zone: TimeZone, value: DayCurve)?
     private var curveTask: Task<DayCurve, Error>?
+    /// Daily totals by "<serial>/<day>", read from disk on first use.
     private var dayTotals: [String: DayTotals]?
+    private var historySave: Task<Void, Never>?
     /// Days the cloud had nothing for, so a list is not asked again for each of them.
     private var emptyDays: Set<String> = []
 
@@ -140,6 +142,7 @@ public actor InverterService: SnapshotProviding {
     public func reset() async {
         config = givenConfig; client = nil; device = nil; allDevices = []; chosenSN = nil; plant = nil
         snapshotCache = nil; curveCache = nil; dayTotals = nil; emptyDays = []
+        historySave?.cancel(); historySave = nil   // a sign-out has just deleted the file; do not write it back
         deviceTask?.cancel(); plantTask?.cancel(); snapshotTask?.cancel(); curveTask?.cancel()
         deviceTask = nil; plantTask = nil; snapshotTask = nil; curveTask = nil
     }
@@ -276,11 +279,23 @@ public actor InverterService: SnapshotProviding {
             if complete { emptyDays.insert(key) }
             return nil
         }
-        var all = dayTotals ?? known
-        all[key] = totals
-        dayTotals = all
-        historyStore.save(all)
+        dayTotals?[key] = totals
+        if complete { scheduleHistorySave() }
         return totals
+    }
+
+    /// Writes the finished days to disk once a burst of reads has settled, not after every day.
+    private func scheduleHistorySave() {
+        guard historySave == nil else { return }
+        historySave = Task {
+            guard (try? await Task.sleep(for: .seconds(1))) != nil else { return }   // cancelled by a reset
+            self.saveHistory()
+        }
+    }
+
+    private func saveHistory() {
+        historySave = nil
+        historyStore.save((dayTotals ?? [:]).filter { $0.value.complete })
     }
 
     // MARK: Inverters

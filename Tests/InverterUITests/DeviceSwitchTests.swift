@@ -11,6 +11,8 @@ private actor TwoInverters: SnapshotProviding {
         [DeviceInfo(id: "A", name: "Upstairs", isSelected: selected == "A"), DeviceInfo(id: "B", name: "Downstairs", isSelected: selected == "B")]
     }
     func selectDevice(_ id: String) async { selected = id }
+    func fetchDayTotals(day: String) async throws -> DayTotals? { nil }
+    func reset() async {}
 }
 
 @MainActor

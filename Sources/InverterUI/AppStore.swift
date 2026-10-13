@@ -26,16 +26,24 @@ public enum MenuBarMetric: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// The symbol beside the number in the menu bar, following the reading: the battery's level
-    /// (with a bolt while charging), and a sun for solar that turns to a moon when the panels make nothing.
-    public func symbol(for reading: EnergySnapshot) -> String {
+    /// What the menu bar shows for a reading: one symbol and number per value, following the
+    /// reading (the battery at its level with a bolt while charging, a sun for solar that turns to a
+    /// moon when the panels make nothing). Empty for the icon alone.
+    public func segments(for reading: EnergySnapshot) -> [(symbol: String, text: String)] {
+        let solar = (Self.solarSymbol(reading), PowerFormat.watts(reading.pvPowerW))
         switch self {
-        case .battery: reading.batteryPowerW > 30 ? "battery.100percent.bolt" : Self.batterySymbol(reading.batteryPercent)
-        case .load: "house"
-        case .solar, .solarAndGrid: reading.pvPowerW > 20 ? "sun.max" : "moon"
-        case .none: symbol
+        case .battery:
+            guard let percent = reading.batteryPercent else { return [] }
+            return [(reading.batteryPowerW > 30 ? "battery.100percent.bolt" : Self.batterySymbol(percent), "\(Int(percent.rounded()))%")]
+        case .load: return [("house", PowerFormat.watts(reading.loadPowerW))]
+        case .solar: return [solar]
+        case .solarAndGrid: return [solar, (Self.gridSymbol(reading), PowerFormat.watts(reading.gridPowerW))]
+        case .none: return []
         }
     }
+
+    public static func solarSymbol(_ reading: EnergySnapshot) -> String { reading.pvPowerW > 20 ? "sun.max" : "moon" }
+    public static func gridSymbol(_ reading: EnergySnapshot) -> String { reading.gridPresent ? "powerplug" : "bolt.slash" }
 
     public static func batterySymbol(_ percent: Double?) -> String {
         guard let percent else { return "battery.0percent" }
@@ -85,11 +93,11 @@ public final class AppStore: ObservableObject {
     @Published public var showToday = false
     @Published public var showDetails = false
     @Published public var showHistory = false
-    @Published public var historyTab: HistoryTab = .days { didSet { if historyTab != oldValue { Task { await loadHistory(force: true) } } } }
+    @Published public var historyTab: HistoryTab = .days { didSet { if historyTab != oldValue { Task { await loadHistory() } } } }
     @Published public var panelOpen = false { didSet { if panelOpen && !oldValue { panelOpened() } } }
 
-    /// False when the illustration was forced for this run (`--style`), so that a recording
-    /// does not overwrite the choice saved from the options menu.
+    /// False when the illustration was forced for this run (`--style`), so that the run does not
+    /// overwrite the choice saved from the options menu.
     private let remembersHeroStyle: Bool
     private let provider: SnapshotProviding
     private let defaults: UserDefaults
@@ -174,14 +182,25 @@ public final class AppStore: ObservableObject {
             }
             await provider.reset()
             snapshot = nil
-            while busy { try? await Task.sleep(for: .milliseconds(100)) }
+            await waitUntilIdle()
             await refresh(force: true)
             if snapshot != nil || !signInRequired { break }
         }
         if signInRequired || snapshot == nil { signInError = errorMessage ?? "Could not read the inverter." }
     }
 
-    /// Forgets the account and its session and goes back to the sign-in form.
+    /// A refresh already running would land after a reset; let it finish first.
+    private func waitUntilIdle() async {
+        while busy { try? await Task.sleep(for: .milliseconds(100)) }
+    }
+
+    /// Drops everything read for the current inverter.
+    private func clearReadings() {
+        snapshot = nil; errorMessage = nil
+        today = nil; todayError = nil; todayFetchedAt = .distantPast
+        history = [:]; historyError = nil; historyFetchedAt = .distantPast
+    }
+
     // MARK: Inverters
 
     /// The name of the inverter shown, when the account has more than one.
@@ -200,23 +219,22 @@ public final class AppStore: ObservableObject {
         defaults.set(id, forKey: Keys.device)
         devices = devices.map { DeviceInfo(id: $0.id, name: $0.name, isSelected: $0.id == id) }
         await provider.selectDevice(id)
-        snapshot = nil; today = nil; todayError = nil; errorMessage = nil
-        history = [:]; historyError = nil; historyFetchedAt = .distantPast
-        while busy { try? await Task.sleep(for: .milliseconds(100)) }
+        await waitUntilIdle()
+        clearReadings()
         await refresh(force: true)
         if showToday { await loadToday(force: true) }
         if showHistory { await loadHistory(force: true) }
     }
 
+    /// Forgets the account and its session and goes back to the sign-in form.
     public func signOut() async {
         do { try InverterConfig.signOut() } catch {
             errorMessage = "Could not remove the account: \(error.localizedDescription)"
             return
         }
         await provider.reset()
-        while busy { try? await Task.sleep(for: .milliseconds(100)) }
-        snapshot = nil; today = nil; todayError = nil; errorMessage = nil
-        history = [:]; historyError = nil; historyFetchedAt = .distantPast
+        await waitUntilIdle()
+        clearReadings()
         devices = []
         defaults.removeObject(forKey: Keys.device)
         signInError = nil; signInRequired = true
@@ -248,18 +266,12 @@ public final class AppStore: ObservableObject {
 
     /// The days of the current month that have been read, newest first.
     public var currentMonthDays: [DayTotals] {
-        let month = Self.dayFormatter.string(from: Date()).prefix(7)
+        let month = SnapshotParser.dayString(for: Date(), in: .current).prefix(7)
         return history.values.filter { $0.day.hasPrefix(month) }.sorted { $0.day > $1.day }
     }
 
     /// Every month that has been read, newest first.
     public var months: [MonthTotals] { MonthTotals.monthly(history.values) }
-
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
 
     /// Reads the days of this month, and for the Months tab the months before it, until one has
     /// nothing. Finished days come from disk after the first time; only today is read again.
@@ -269,7 +281,8 @@ public final class AppStore: ObservableObject {
         historyError = nil
         defer { historyLoading = false; historyFetchedAt = Date() }
 
-        let calendar = Calendar.current
+        // Day keys are Gregorian, as the cloud's are, whatever calendar the Mac is set to.
+        let calendar = Calendar(identifier: .gregorian)
         let today = calendar.startOfDay(for: Date())
         var month = calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today
         let monthsToRead = historyTab == .days ? 1 : 24
@@ -284,24 +297,29 @@ public final class AppStore: ObservableObject {
     private static func days(of month: Date, upTo today: Date, calendar: Calendar) -> [String] {
         let count = calendar.range(of: .day, in: .month, for: month)?.count ?? 0
         return (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: month) }
-            .filter { $0 <= today }.map { dayFormatter.string(from: $0) }
+            .filter { $0 <= today }.map { SnapshotParser.dayString(for: $0, in: calendar.timeZone) }
     }
 
-    /// Reads these days, three at a time. True if any of them has data.
+    /// Reads these days, three at a time, and publishes them together (one panel update, not one per day).
+    /// True if any of them has data.
     private func readDays(_ days: [String]) async -> Bool {
         let provider = self.provider
         var pending = days.filter { history[$0]?.complete != true }.makeIterator()
+        var read: [String: DayTotals] = [:]
+        var failure: Error?
         await withTaskGroup(of: (String, DayTotals?, Error?).self) { group in
             for _ in 0..<3 {
                 guard let day = pending.next() else { break }
                 group.addTask { await Self.read(day, from: provider) }
             }
             while let (day, totals, error) = await group.next() {
-                if let totals { history[day] = totals }
-                if let error { historyError = Self.describe(error) }
+                if let totals { read[day] = totals }
+                if let error { failure = error }
                 if let next = pending.next() { group.addTask { await Self.read(next, from: provider) } }
             }
         }
+        if !read.isEmpty { history.merge(read) { $1 } }
+        if let failure { historyError = Self.describe(failure) }
         return days.contains { history[$0] != nil }
     }
 
@@ -338,7 +356,7 @@ public final class AppStore: ObservableObject {
             }
             let home = NSHomeDirectory()
             if ["Documents", "Desktop", "Downloads"].contains(where: { path.hasPrefix("\(home)/\($0)/") }) {
-                return text + " If the file is there, macOS may not have let InverterBar into that folder: "
+                return text + " If the file is there, macOS may not have let Inverterly into that folder: "
                     + "allow it in System Settings, Privacy & Security, Files and Folders, then try again."
             }
         }
@@ -354,17 +372,11 @@ public final class AppStore: ObservableObject {
         return snapshot.isStale() || Date().timeIntervalSince(snapshot.fetchedAt) > 600
     }
 
-    /// The number beside the icon. Nothing is shown for a stale reading: an old percentage that
+    /// The values beside the icon. Nothing is shown for a stale reading: an old percentage that
     /// looks live is worse than none.
-    public var menuBarText: String? {
-        guard let snapshot, !readingIsStale else { return nil }
-        switch metric {
-        case .battery: return snapshot.batteryPercent.map { "\(Int($0.rounded()))%" }
-        case .load: return PowerFormat.watts(snapshot.loadPowerW)
-        case .solar: return PowerFormat.watts(snapshot.pvPowerW)
-        case .solarAndGrid: return "\(PowerFormat.watts(snapshot.pvPowerW)) \(PowerFormat.watts(snapshot.gridPowerW))"
-        case .none: return nil
-        }
+    public var menuBarSegments: [(symbol: String, text: String)] {
+        guard let snapshot, !readingIsStale else { return [] }
+        return metric.segments(for: snapshot)
     }
 
     /// The icon moves for a few seconds when a new reading arrives and then rests. Redrawing a

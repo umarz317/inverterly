@@ -528,12 +528,13 @@ private struct DevicePainter {
     /// Where each extra wisp joins the cycle, so that two are evenly spaced, and so are four.
     private static let order: [Double] = [0, 0.5, 0.25, 0.75]
 
-    /// Comet-shaped wisps travelling along `point(0…1)`. More power means faster, longer and more of them:
-    /// the first is always there, and each further one joins at its own `appear` amount.
-    private func wisps(_ c: inout GraphicsContext, watts: Double, on: Double, tone: DeviceTone, seed: Int, run: CGFloat,
-                       length: ClosedRange<CGFloat>, appear: [Double], jitter: Double, segments: Int, width: CGFloat, dot: Bool,
-                       point: (Double) -> CGPoint) {
+    /// Comet-shaped wisps travelling along a conduit from `from` to `to`. More power means faster,
+    /// longer and more of them: one for a trickle, and four from about 3 kW.
+    private func conduit(_ c: inout GraphicsContext, watts: Double, on: Double, tone: DeviceTone, seed: Int, from: CGPoint, to: CGPoint) {
         guard on > 0.01 else { return }
+        let run = abs(to.x - from.x)
+        func point(_ p: Double) -> CGPoint { CGPoint(x: from.x + (to.x - from.x) * CGFloat(p), y: from.y + (to.y - from.y) * CGFloat(p)) }
+        let length: ClosedRange<CGFloat> = 11...20, appear = [0, 0.15, 0.40, 0.65], jitter = 0.12, width: CGFloat = 1.8
         let intensity = HeroMath.intensity(watts), amount = DeviceState.amount(watts)
         // The cycle is sized for the longest wisp, so a wisp's rate never depends on its present length.
         let reach = Double(length.upperBound / run)
@@ -557,11 +558,11 @@ private struct DevicePainter {
                 let alpha = on * share * density * (0.68 + 0.32 * amount) * calm
                 var path = Path()
                 path.move(to: point(t))
-                for step in 1...segments { path.addLine(to: point(t + (h - t) * Double(step) / Double(segments))) }
+                path.addLine(to: point(h))
                 c.stroke(path, with: .linearGradient(Gradient(colors: [tone.color(0), tone.color(alpha * 0.5), tone.color(alpha)]),
                                                      startPoint: point(tail), endPoint: point(head)),
-                         style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
-                if dot, head < 1 {
+                         style: StrokeStyle(lineWidth: width, lineCap: .round))
+                if head < 1 {
                     let p = point(head), r = width * 0.95
                     c.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)), with: .color(tone.color(alpha)))
                 }
@@ -570,14 +571,6 @@ private struct DevicePainter {
     }
 
     private func energy(_ c: inout GraphicsContext) {
-        func along(_ a: CGPoint, _ b: CGPoint) -> (Double) -> CGPoint {
-            { p in CGPoint(x: a.x + (b.x - a.x) * CGFloat(p), y: a.y + (b.y - a.y) * CGFloat(p)) }
-        }
-        // A conduit carries one wisp for a trickle and four from about 3 kW.
-        func conduit(_ e: inout GraphicsContext, watts: Double, on: Double, tone: DeviceTone, seed: Int, from: CGPoint, to: CGPoint) {
-            wisps(&e, watts: watts, on: on, tone: tone, seed: seed, run: abs(to.x - from.x), length: 11...20,
-                  appear: [0, 0.15, 0.40, 0.65], jitter: 0.12, segments: 1, width: 1.8, dot: true, point: along(from, to))
-        }
         c.drawLayer { e in
             e.addFilter(.blur(radius: 0.5))
             conduit(&e, watts: s.solarW, on: s.solarOn, tone: s.solar, seed: 1, from: DeviceGeo.solarFrom, to: DeviceGeo.solarTo)

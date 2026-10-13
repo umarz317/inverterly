@@ -28,11 +28,12 @@ public final class StatusItemController: NSObject {
     private var topLeft = NSPoint.zero
     /// What the status item is showing, so an unchanged icon is not redrawn.
     private var shownIcon = ""
+    private var shownLabel = ""
     private var closedByOutsideClickAt = Date.distantPast
 
     public private(set) var isOpen = false
-    /// When true, clicking elsewhere does not close the panel. Used by `--open`,
-    /// where the panel has to stay up while something else is being used or recorded.
+    /// When true, clicking elsewhere does not close the panel. Used by `--open`, so the panel
+    /// stays up while something else is being used.
     public var staysOpen = false
 
     public init(store: AppStore) {
@@ -57,56 +58,48 @@ public final class StatusItemController: NSObject {
         refreshLabel()
     }
 
-    /// The panel's window number while it is on screen, for tools that capture a single window.
-    public var panelWindowNumber: Int? { isOpen ? panel?.windowNumber : nil }
-
     // MARK: Menu bar label
 
     private func refreshLabel() {
         guard let button = statusItem.button else { return }
         let reading = store.snapshot
         let stale = store.readingIsStale
-        let power = reading?.batteryPowerW ?? 0
-        let activity: MenuBarIcon.Activity = stale ? .unknown : power > 30 ? .charging : power < -30 ? .discharging : .idle
-        let level = stale ? nil : reading?.batteryPercent.map { $0 / 100 }
         let solar = !stale && (reading?.pvPowerW ?? 0) > 20
         let phase = store.animateIcon ? store.iconPhase : 0
 
-        // With a number showing, its own symbol stands beside it; with the icon alone, or no fresh
-        // reading, the app's sun over the level bar.
-        let metricSymbol = store.menuBarText == nil ? nil : reading.map { store.metric.symbol(for: $0) }
-        // Solar and grid together: both symbols and both numbers in one picture, no title.
-        let pair: [(symbol: String, text: String)]? = store.metric == .solarAndGrid && metricSymbol != nil ? reading.map {
-            [(store.metric.symbol(for: $0), PowerFormat.watts($0.pvPowerW)),
-             ($0.gridPresent ? "powerplug" : "bolt.slash", PowerFormat.watts($0.gridPowerW))]
-        } : nil
+        // One value: its symbol as the image and its number as the title. Several: drawn together
+        // in one image. None (the icon alone, or no fresh reading): the app's sun over a wave.
+        let segments = store.menuBarSegments
+        let single = segments.count == 1 ? segments[0] : nil
 
         // Setting the image makes macOS re-render the item for every display, so only do it
         // when the picture would actually differ.
-        let icon = pair.map { $0.map { "\($0.symbol) \($0.text)" }.joined(separator: "|") } ?? metricSymbol
-            ?? "\(level.map { Int(($0 * 100).rounded()) } ?? -1)|\(activity)|\(solar)|\(phase)"
+        let icon = segments.count > 1 ? segments.map { "\($0.symbol) \($0.text)" }.joined(separator: "|")
+            : single?.symbol ?? "\(stale)|\(solar)|\(phase)"
         if icon != shownIcon {
             shownIcon = icon
-            if let pair {
-                button.image = MenuBarIcon.pairs(pair)
-            } else if let metricSymbol, let image = NSImage(systemSymbolName: metricSymbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 13, weight: .regular)) {
-                image.isTemplate = true
+            if segments.count > 1 {
+                button.image = MenuBarIcon.pairs(segments)
+            } else if let single, let image = MenuBarIcon.symbol(single.symbol) {
                 button.image = image
             } else {
-                button.image = MenuBarIcon.image(level: level, activity: activity, solar: solar, phase: phase)
+                button.image = MenuBarIcon.image(solar: solar, known: !stale && reading != nil, phase: phase)
             }
         }
-        let title = pair == nil ? store.menuBarText ?? "" : ""
+        let title = single?.text ?? ""
         if button.title != title { button.title = title }
-        button.setAccessibilityLabel(accessibilityText(reading, stale: stale))
+        let label = accessibilityText(reading, stale: stale)
+        if label != shownLabel {
+            shownLabel = label
+            button.setAccessibilityLabel(label)
+        }
     }
 
     private func accessibilityText(_ reading: EnergySnapshot?, stale: Bool) -> String {
-        guard let reading else { return "InverterBar, no data" }
-        guard !stale else { return "InverterBar, no recent data" }
+        guard let reading else { return "Inverterly, no data" }
+        guard !stale else { return "Inverterly, no recent data" }
         let battery = reading.batteryPercent.map { "battery \(Int($0.rounded())) percent" } ?? "battery unknown"
-        return "InverterBar, \(reading.mode.label.lowercased()), \(battery), load \(PowerFormat.watts(reading.loadPowerW))"
+        return "Inverterly, \(reading.mode.label.lowercased()), \(battery), load \(PowerFormat.watts(reading.loadPowerW))"
     }
 
     // MARK: Open and close
@@ -219,7 +212,7 @@ public final class StatusItemController: NSObject {
         panel.animationBehavior = .none
         // The app is never the active one, and tooltips are normally shown only by the active app.
         panel.allowsToolTipsWhenApplicationIsInactive = true
-        panel.setAccessibilityTitle("InverterBar")
+        panel.setAccessibilityTitle("Inverterly")
 
         // The SwiftUI content sits in a clip view, pinned to its top edge at a fixed height.
         // It never stretches with the window: when the window animates taller or shorter the

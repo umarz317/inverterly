@@ -42,7 +42,7 @@ public struct InverterPanel: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 6) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("InverterBar").font(.system(size: 13, weight: .semibold))
+                Text("Inverterly").font(.system(size: 13, weight: .semibold))
                 Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
@@ -54,42 +54,42 @@ public struct InverterPanel: View {
             .disabled(store.busy)
 
             Menu {
-                    if store.devices.count > 1 {
-                        Picker(selection: Binding(
-                            get: { store.devices.first(where: \.isSelected)?.id ?? "" },
-                            set: { id in Task { await store.selectDevice(id) } })) {
-                            ForEach(store.devices) { Text($0.name).tag($0.id) }
-                        } label: { Label("Inverter", systemImage: "bolt.horizontal") }
-                        Divider()
-                    }
-                    Picker(selection: $store.heroStyle) {
-                        ForEach(HeroStyle.selectable) { Label($0.title, systemImage: $0.symbol).tag($0) }
-                    } label: { Label("Illustration", systemImage: "photo") }
-                    Picker(selection: $store.metric) {
-                        ForEach(MenuBarMetric.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
-                    } label: { Label("Menu bar shows", systemImage: "menubar.rectangle") }
-                    Toggle(isOn: $store.animateIcon) { Label("Animate menu bar icon", systemImage: "sparkles") }
-                    if LaunchAtLogin.isAvailable {
-                        Toggle(isOn: Binding(
-                            get: { launchAtLogin },
-                            set: { LaunchAtLogin.set($0); launchAtLogin = LaunchAtLogin.isEnabled })) {
-                            Label("Open at login", systemImage: "power")
-                        }
-                    }
+                if store.devices.count > 1 {
+                    Picker(selection: Binding(
+                        get: { store.devices.first(where: \.isSelected)?.id ?? "" },
+                        set: { id in Task { await store.selectDevice(id) } })) {
+                        ForEach(store.devices) { Text($0.name).tag($0.id) }
+                    } label: { Label("Inverter", systemImage: "bolt.horizontal") }
                     Divider()
-                    if !store.signInRequired {
-                        Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { Task { await store.signOut() } }
-                    }
-                    Button("Quit InverterBar", systemImage: "xmark.rectangle") { NSApplication.shared.terminate(nil) }
-                        .keyboardShortcut("q")
-                } label: {
-                    Image(systemName: "ellipsis").font(.system(size: 13, weight: .medium))
-                        .frame(width: 26, height: 26).contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Options")
+                Picker(selection: $store.heroStyle) {
+                    ForEach(HeroStyle.selectable) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                } label: { Label("Illustration", systemImage: "photo") }
+                Picker(selection: $store.metric) {
+                    ForEach(MenuBarMetric.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                } label: { Label("Menu bar shows", systemImage: "menubar.rectangle") }
+                Toggle(isOn: $store.animateIcon) { Label("Animate menu bar icon", systemImage: "sparkles") }
+                if LaunchAtLogin.isAvailable {
+                    Toggle(isOn: Binding(
+                        get: { launchAtLogin },
+                        set: { LaunchAtLogin.set($0); launchAtLogin = LaunchAtLogin.isEnabled })) {
+                        Label("Open at login", systemImage: "power")
+                    }
+                }
+                Divider()
+                if !store.signInRequired {
+                    Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { Task { await store.signOut() } }
+                }
+                Button("Quit Inverterly", systemImage: "xmark.rectangle") { NSApplication.shared.terminate(nil) }
+                    .keyboardShortcut("q")
+            } label: {
+                Image(systemName: "ellipsis").font(.system(size: 13, weight: .medium))
+                    .frame(width: 26, height: 26).contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Options")
         }
     }
 
@@ -139,7 +139,7 @@ public struct InverterPanel: View {
 
             SectionRow(title: "Today", trailing: todaySummary(snapshot), open: $store.showToday)
             if store.showToday {
-                TodaySection(store: store, snapshot: snapshot).padding(.bottom, 8).transition(.opacity)
+                TodaySection(store: store).padding(.bottom, 8).transition(.opacity)
             }
             Divider().opacity(0.5)
             SectionRow(title: "History", trailing: historySummary, open: $store.showHistory)
@@ -219,7 +219,7 @@ public struct InverterPanel: View {
     private func tiles(_ snapshot: EnergySnapshot) -> some View {
         let battery = snapshot.batteryPowerW
         return HStack(spacing: 6) {
-            StatTile(symbol: snapshot.pvPowerW > 20 ? "sun.max" : "moon", caption: "Solar",
+            StatTile(symbol: MenuBarMetric.solarSymbol(snapshot), caption: "Solar",
                      value: PowerFormat.watts(snapshot.pvPowerW),
                      detail: snapshot.pvVoltage.map { String(format: "%.0f V", $0) } ?? "–",
                      quiet: snapshot.pvPowerW < 1)
@@ -228,7 +228,7 @@ public struct InverterPanel: View {
                      detail: abs(battery) > 30 ? "\(battery > 0 ? "+" : "−")\(PowerFormat.watts(battery))"
                          : (snapshot.batteryVoltage.map { String(format: "%.1f V", $0) } ?? "–"),
                      quiet: false)
-            StatTile(symbol: snapshot.gridPresent ? "powerplug" : "bolt.slash", caption: "Grid",
+            StatTile(symbol: MenuBarMetric.gridSymbol(snapshot), caption: "Grid",
                      value: snapshot.gridPresent ? (snapshot.gridPowerW > 0 ? PowerFormat.watts(snapshot.gridPowerW) : "Standby") : "Outage",
                      detail: snapshot.gridPresent ? String(format: "%.0f V", snapshot.gridVoltage ?? 0) : "No supply",
                      quiet: snapshot.gridPowerW < 1, alert: !snapshot.gridPresent)
@@ -252,7 +252,6 @@ public extension PowerFormat {
 
 private struct TodaySection: View {
     @ObservedObject var store: AppStore
-    let snapshot: EnergySnapshot
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -349,10 +348,17 @@ private struct HistorySection: View {
         }
     }
 
-    private static func date(_ text: String, _ format: String) -> Date? {
+    /// Parses the "2026-10" and "2026-10-13" keys, which are Gregorian whatever the Mac is set to.
+    private static let keyFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = format
-        return formatter.date(from: text)
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter
+    }()
+
+    private static func date(_ text: String, _ format: String) -> Date? {
+        keyFormatter.dateFormat = format
+        return keyFormatter.date(from: text)
     }
 
     private static func dayLabel(_ day: String) -> String {
@@ -365,11 +371,6 @@ private struct HistorySection: View {
     private static func monthLabel(_ month: String) -> String {
         date(month, "yyyy-MM")?.formatted(.dateTime.month(.abbreviated).year()) ?? month
     }
-}
-
-/// kWh with one decimal below 100 and none above, so columns stay narrow.
-private func kWhText(_ value: Double) -> String {
-    value >= 100 ? String(format: "%.0f", value) : String(format: "%.1f", value)
 }
 
 /// A kWh figure that counts up to its value when it appears, and on to each new value as history
@@ -396,7 +397,7 @@ private struct CountingKWh: View {
             if let percentOf {
                 Text("\(Int((percentOf > 0 ? value / percentOf * 100 : 0).rounded()))% from solar")
             } else {
-                Text(kWhText(value))
+                Text(PowerFormat.kWhNumber(value))
             }
         }
     }

@@ -44,18 +44,13 @@ public struct MonthTotals: Sendable, Equatable, Identifiable {
 }
 
 /// Daily totals kept on disk, so a finished day is read from the cloud only once.
-/// `~/Library/Application Support/InverterBar/history.json`.
+/// `~/Library/Application Support/Inverterly/history.json`.
 public struct HistoryStore: Sendable {
     public let fileURL: URL?
 
     public init(fileURL: URL?) { self.fileURL = fileURL }
 
-    public static let standard: HistoryStore = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support", isDirectory: true)
-        return HistoryStore(fileURL: base.appendingPathComponent("InverterBar", isDirectory: true)
-            .appendingPathComponent("history.json", isDirectory: false))
-    }()
+    public static let standard = HistoryStore(fileURL: appSupportFile("history.json"))
 
     /// Keeps the history in memory only.
     public static let memoryOnly = HistoryStore(fileURL: nil)

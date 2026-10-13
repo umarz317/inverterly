@@ -159,7 +159,10 @@ public enum PowerFormat {
         return (String(format: v < 10_000 ? "%.2f" : "%.1f", v / 1000), "kW")
     }
 
-    public static func kWh(_ value: Double) -> String {
-        value < 100 ? String(format: "%.1f kWh", value) : String(format: "%.0f kWh", value)
+    public static func kWh(_ value: Double) -> String { kWhNumber(value) + " kWh" }
+
+    /// The number alone, for tables headed "kWh": one decimal below 100, none above.
+    public static func kWhNumber(_ value: Double) -> String {
+        value < 100 ? String(format: "%.1f", value) : String(format: "%.0f", value)
     }
 }

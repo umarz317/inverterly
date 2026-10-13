@@ -61,21 +61,6 @@ struct TodayChart: View {
         canvas.draw(Text(PowerFormat.kilowatts(top)).font(.system(size: 9)).foregroundStyle(ink.opacity(0.4)),
                     at: CGPoint(x: plot.minX, y: plot.minY + 4), anchor: .leading)
 
-        // Solar area.
-        var area = Path()
-        var line = Path()
-        for (index, point) in curve.points.enumerated() {
-            let p = CGPoint(x: x(point.time), y: y(point.pvW))
-            if index == 0 { area.move(to: CGPoint(x: p.x, y: plot.maxY)); area.addLine(to: p); line.move(to: p) }
-            else { area.addLine(to: p); line.addLine(to: p) }
-        }
-        if let last = curve.points.last { area.addLine(to: CGPoint(x: x(last.time), y: plot.maxY)) }
-        area.closeSubpath()
-        canvas.fill(area, with: .linearGradient(Gradient(colors: [Color.solarAccent.opacity(0.34), Color.solarAccent.opacity(0.04)]),
-                                                startPoint: CGPoint(x: 0, y: plot.minY), endPoint: CGPoint(x: 0, y: plot.maxY)))
-        canvas.stroke(line, with: .color(Color.solarAccent.opacity(0.95)), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
-
-        // Grid and load lines.
         func trace(_ watts: KeyPath<DayCurvePoint, Double>) -> Path {
             var path = Path()
             for (index, point) in curve.points.enumerated() {
@@ -84,6 +69,20 @@ struct TodayChart: View {
             }
             return path
         }
+
+        // Solar: the line, and the same line closed down to the axis as a soft area.
+        let solar = trace(\.pvW)
+        if let first = curve.points.first, let last = curve.points.last {
+            var area = solar
+            area.addLine(to: CGPoint(x: x(last.time), y: plot.maxY))
+            area.addLine(to: CGPoint(x: x(first.time), y: plot.maxY))
+            area.closeSubpath()
+            canvas.fill(area, with: .linearGradient(Gradient(colors: [Color.solarAccent.opacity(0.34), Color.solarAccent.opacity(0.04)]),
+                                                    startPoint: CGPoint(x: 0, y: plot.minY), endPoint: CGPoint(x: 0, y: plot.maxY)))
+        }
+        canvas.stroke(solar, with: .color(Color.solarAccent.opacity(0.95)), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
+
+        // Grid and load lines.
         canvas.stroke(trace(\.gridW), with: .color(Color.gridAccent.opacity(0.9)), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
         canvas.stroke(trace(\.loadW), with: .color(ink.opacity(0.75)), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
 

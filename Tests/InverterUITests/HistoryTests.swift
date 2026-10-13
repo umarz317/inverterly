@@ -7,6 +7,9 @@ private struct DaysProvider: SnapshotProviding {
     let first: String        // the earliest day that has data, "2026-09-20"
     func fetchSnapshot(force: Bool) async throws -> EnergySnapshot { EnergySnapshot() }
     func fetchToday() async throws -> DayCurve { DayCurve(day: "", dayStart: Date()) }
+    func listDevices() async throws -> [DeviceInfo] { [] }
+    func selectDevice(_ id: String) async {}
+    func reset() async {}
     func fetchDayTotals(day: String) async throws -> DayTotals? {
         try await Task.sleep(for: .milliseconds(5))
         guard day >= first else { return nil }

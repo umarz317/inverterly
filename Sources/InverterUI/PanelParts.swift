@@ -146,7 +146,7 @@ struct SignInView: View {
         .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    /// The app icon when running from the built app; a sun glyph when there is none (swift run, lab renders).
+    /// The app icon when running from the built app; a sun glyph when there is none (swift run).
     @ViewBuilder private var logo: some View {
         if let icon = NSImage(named: "AppIcon") {
             Image(nsImage: icon).resizable().frame(width: 64, height: 64)
