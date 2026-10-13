@@ -1,0 +1,15 @@
+.build/
+dist/
+*.xcodeproj
+.DS_Store
+.swiftpm/
+
+# Never commit an account file or a saved session.
+.env
+*.env
+!.env.example
+session.json
+
+# Personal screen recordings stay out of the repository.
+docs/screen-demo*.mp4
+docs/*.mov
