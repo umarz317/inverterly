@@ -1,18 +1,22 @@
 import Foundation
 
-/// What the UI needs from a data source. `InverterService` is the live one; a demo or preview
+/// What the UI needs from a data source. `InverterService` is the live one; a test
 /// provider only has to return canned values.
 public protocol SnapshotProviding: Sendable {
     /// The current reading. `force` skips the cache.
     func fetchSnapshot(force: Bool) async throws -> EnergySnapshot
     /// Today's readings for the small chart.
     func fetchToday() async throws -> DayCurve
+    /// Forget the account, session and readings so the next fetch starts from the account file again.
+    func reset() async
 }
 
 public extension SnapshotProviding {
     func fetchSnapshot() async throws -> EnergySnapshot {
         try await fetchSnapshot(force: false)
     }
+
+    func reset() async {}
 }
 
 /// A provider that always answers with the values it was given. For previews, demos and tests.
@@ -103,6 +107,14 @@ public actor InverterService: SnapshotProviding {
         self.sessionStore = sessionStore
         self.transport = transport
         self.now = now
+    }
+
+    /// Drops everything tied to the old account; the next fetch re-reads the env file.
+    public func reset() {
+        config = nil; client = nil; device = nil; plant = nil
+        snapshotCache = nil; curveCache = nil
+        deviceTask?.cancel(); plantTask?.cancel(); snapshotTask?.cancel(); curveTask?.cancel()
+        deviceTask = nil; plantTask = nil; snapshotTask = nil; curveTask = nil
     }
 
     // MARK: Last good values

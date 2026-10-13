@@ -298,41 +298,44 @@ public struct SessionStore: Sendable {
         return try? JSONDecoder().decode(DessSession.self, from: data)
     }
 
-    /// Writes through a 0600 temporary file and renames it over the old one, so the secret is
-    /// never on disk with wider permissions and a crash cannot leave half a file.
     func save(_ session: DessSession) throws {
         guard let fileURL else { return }
-        let directory = fileURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
-                                                attributes: [.posixPermissions: 0o700])
-        // createDirectory leaves a folder that already exists as it is; make sure of it.
-        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(session)
-
-        let temporary = directory.appendingPathComponent(".session-\(UUID().uuidString).tmp", isDirectory: false)
-        let descriptor = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
-        guard descriptor >= 0 else { throw CocoaError(.fileWriteNoPermission) }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        do {
-            try handle.write(contentsOf: data)
-            try handle.close()
-        } catch {
-            try? FileManager.default.removeItem(at: temporary)
-            throw error
-        }
-        guard rename(temporary.path, fileURL.path) == 0 else {
-            try? FileManager.default.removeItem(at: temporary)
-            throw CocoaError(.fileWriteUnknown)
-        }
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+        try writePrivately(try encoder.encode(session), to: fileURL)
     }
 
     func clear() {
         guard let fileURL else { return }
         try? FileManager.default.removeItem(at: fileURL)
     }
+}
+
+/// Writes through a 0600 temporary file and renames it over the old one, so the secret is
+/// never on disk with wider permissions and a crash cannot leave half a file. The folder is made 0700.
+func writePrivately(_ data: Data, to fileURL: URL) throws {
+    let directory = fileURL.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                            attributes: [.posixPermissions: 0o700])
+    // createDirectory leaves a folder that already exists as it is; make sure of it.
+    try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+
+    let temporary = directory.appendingPathComponent(".\(UUID().uuidString).tmp", isDirectory: false)
+    let descriptor = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+    guard descriptor >= 0 else { throw CocoaError(.fileWriteNoPermission) }
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    do {
+        try handle.write(contentsOf: data)
+        try handle.close()
+    } catch {
+        try? FileManager.default.removeItem(at: temporary)
+        throw error
+    }
+    guard rename(temporary.path, fileURL.path) == 0 else {
+        try? FileManager.default.removeItem(at: temporary)
+        throw CocoaError(.fileWriteUnknown)
+    }
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
 }
 
 // MARK: - Client

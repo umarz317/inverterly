@@ -16,6 +16,44 @@ final class ConfigTests: ScratchTestCase {
         try super.tearDownWithError()
     }
 
+    // MARK: Saving the account
+
+    func testSaveCreatesPrivateFileThatLoadsBack() throws {
+        let path = scratch.appendingPathComponent("new/dir/.env").path
+        try InverterConfig.save(app: "dessmonitor", user: "me@example.com", password: "p=w #1", path: path)
+        XCTAssertEqual(try permissions(of: URL(fileURLWithPath: path)), 0o600)
+        let config = try InverterConfig.load(path: path, environment: [:], defaults: defaults)
+        XCTAssertEqual(config.user, "me@example.com")
+        XCTAssertEqual(config.password, "p=w #1")
+        XCTAssertEqual(config.profile.name, "dessmonitor")
+    }
+
+    func testSaveReplacesAccountButKeepsOtherLines() throws {
+        let path = try write("# mine\nSHINEMONITOR_USER=old\nSHINEMONITOR_PN=PN123\nSHINEMONITOR_PASSWORD=old\n")
+        try InverterConfig.save(app: "watchpower", user: "new", password: "secret", path: path)
+        let values = InverterConfig.parseEnv(try String(contentsOfFile: path, encoding: .utf8))
+        XCTAssertEqual(values["SHINEMONITOR_USER"], "new")
+        XCTAssertEqual(values["SHINEMONITOR_PASSWORD"], "secret")
+        XCTAssertEqual(values["SHINEMONITOR_APP"], "watchpower")
+        XCTAssertEqual(values["SHINEMONITOR_PN"], "PN123")
+    }
+
+    func testSignOutRemovesAccountAndSession() throws {
+        let path = try write("# mine\nSHINEMONITOR_USER=a\nSHINEMONITOR_PASSWORD=b\nSHINEMONITOR_APP=watchpower\nSHINEMONITOR_PN=P\nOTHER=keep\n")
+        try FileManager.default.createDirectory(at: sessionFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "{}".write(to: sessionFile, atomically: true, encoding: .utf8)
+        try InverterConfig.signOut(path: path, sessionStore: store)
+        let values = InverterConfig.parseEnv(try String(contentsOfFile: path, encoding: .utf8))
+        XCTAssertEqual(values, ["OTHER": "keep"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sessionFile.path))
+    }
+
+    func testSignOutDeletesAnAccountOnlyFile() throws {
+        let path = try write("SHINEMONITOR_USER=a\nSHINEMONITOR_PASSWORD=b\n")
+        try InverterConfig.signOut(path: path, sessionStore: store)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+    }
+
     // MARK: Env file parsing (same rules as loadEnvFile() in the Node client)
 
     func testParseEnvFollowsTheNodeLoader() {
@@ -69,11 +107,11 @@ final class ConfigTests: ScratchTestCase {
         XCTAssertEqual(CloudProfile.named("DessMonitor"), .dessmonitor, "the JS lowercases the name")
     }
 
-    func testProfilesCarryTheSameConstantsAsTheNodeClient() {
+    func testProfilesCarryTheAppIdentitiesAndCurrentHosts() {
         XCTAssertEqual(CloudProfile.all.map(\.name), ["watchpower", "solarpower", "dessmonitor"])
         XCTAssertEqual(CloudProfile.watchpower.appID, "wifiapp.volfw.watchpower")
         XCTAssertEqual(CloudProfile.watchpower.appVersion, "1.0.6.3")
-        XCTAssertEqual(CloudProfile.watchpower.baseURL, "http://android.shinemonitor.com/public/")
+        XCTAssertEqual(CloudProfile.watchpower.baseURL, "https://web.dessmonitor.com/public/")
         XCTAssertEqual(CloudProfile.solarpower.appID, "com.voltronicpower.solarpower")
         XCTAssertEqual(CloudProfile.solarpower.baseURL, "http://android.shinemonitor.com/public/")
         XCTAssertEqual(CloudProfile.dessmonitor.appID, "wifiapp.volfw.watchpower")

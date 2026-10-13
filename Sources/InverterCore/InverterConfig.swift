@@ -151,6 +151,45 @@ public struct InverterConfig: Sendable, Equatable {
                               collectorPN: value(Key.pn), inverterSN: value(Key.sn), sourcePath: path)
     }
 
+    /// The file's lines without the given keys, or none if there is no file.
+    private static func lines(of path: String, without keys: Set<String>) -> [String] {
+        guard let data = FileManager.default.contents(atPath: path) else { return [] }
+        var lines = String(decoding: data, as: UTF8.self).components(separatedBy: .newlines).filter { line in
+            guard let equals = line.firstIndex(of: "=") else { return true }
+            return !keys.contains(jsTrim(String(line[..<equals])))
+        }
+        while lines.last.map(jsTrim) == "" { lines.removeLast() }
+        return lines
+    }
+
+    private static func write(_ lines: [String], to path: String) throws {
+        try writePrivately(Data((lines.joined(separator: "\n") + "\n").utf8), to: URL(fileURLWithPath: path))
+    }
+
+    /// Saves the account to the env file (mode 0600), keeping any other lines in it, such as a device
+    /// pick. Writes to `resolvePath()`, so the next `load()` finds it.
+    @discardableResult
+    public static func save(app: String, user: String, password: String, path explicit: String? = nil) throws -> String {
+        let path = resolvePath(explicit)
+        let lines = lines(of: path, without: [Key.user, Key.password, Key.app])
+            + ["\(Key.user)=\(user)", "\(Key.password)=\(password)", "\(Key.app)=\(app)"]
+        try write(lines, to: path)
+        return path
+    }
+
+    /// Forgets the account: removes it from the env file (the file itself goes if nothing else is in
+    /// it) and deletes the saved login session.
+    public static func signOut(path explicit: String? = nil, sessionStore: SessionStore = .standard) throws {
+        let path = resolvePath(explicit)
+        sessionStore.clear()
+        let rest = lines(of: path, without: [Key.user, Key.password, Key.app, Key.pn, Key.sn])
+        if rest.contains(where: { !jsTrim($0).isEmpty }) {
+            try write(rest, to: path)
+        } else if FileManager.default.fileExists(atPath: path) {
+            try FileManager.default.removeItem(atPath: path)
+        }
+    }
+
     /// Same rules as `loadEnvFile()` in the Node client: one `KEY=value` per line, blank lines and
     /// lines starting with `#` skipped, lines without `=` skipped, key and value trimmed, one pair
     /// of matching single or double quotes around the value removed, first definition of a key wins.
