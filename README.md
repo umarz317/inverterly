@@ -4,7 +4,9 @@
 
 A macOS menu bar app that shows a Voltronic-type solar inverter live: what the panels are making, what the house is drawing, where the battery stands, and whether the grid is up.
 
-![The Inverterly panel on solar, on battery and on grid (made-up readings)](docs/inverterly.gif)
+<p align="center">
+  <img src="docs/inverterly.gif" width="380" alt="The Inverterly panel on solar, on battery and on grid (made-up readings)">
+</p>
 
 These inverters are sold as Axpert, MPP Solar and under many other names. They all report to the vendor cloud read by the WatchPower, SolarPower and DessMonitor phone apps, and Inverterly reads that cloud with the account you already have.
 
