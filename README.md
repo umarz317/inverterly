@@ -56,7 +56,7 @@ SHINEMONITOR_APP=dessmonitor
 
 - `SHINEMONITOR_APP` is `dessmonitor`, `watchpower` or `solarpower`. WatchPower and DessMonitor use the DessMonitor server over https and have been checked with live accounts. SolarPower uses plain http and has not been tested.
 - `SHINEMONITOR_BASE_URL=http://android.shinemonitor.com/public/` selects the legacy server for an older WatchPower account.
-- `SHINEMONITOR_PN` and `SHINEMONITOR_SN` choose a device when the account has more than one.
+- `SHINEMONITOR_PN` and `SHINEMONITOR_SN` choose the starting device when the account has more than one; the Inverter menu overrides them.
 
 The app looks for the file in this order:
 
@@ -80,6 +80,7 @@ The three-dot menu has:
 - **Illustration**: the animated picture in the panel. Inverter, Flow map or House.
 - **Menu bar shows**: battery percent, load, solar, or the icon alone.
 - **Animate menu bar icon**: the icon moves briefly when a new reading arrives. Turn it off for a still icon.
+- **Inverter**: when the account has more than one, which inverter the panel and menu bar show. Each keeps its own history.
 - **Open at login**
 - **Sign out**
 

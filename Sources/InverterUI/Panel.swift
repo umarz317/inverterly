@@ -54,6 +54,14 @@ public struct InverterPanel: View {
             .disabled(store.busy)
 
             Menu {
+                    if store.devices.count > 1 {
+                        Picker(selection: Binding(
+                            get: { store.devices.first(where: \.isSelected)?.id ?? "" },
+                            set: { id in Task { await store.selectDevice(id) } })) {
+                            ForEach(store.devices) { Text($0.name).tag($0.id) }
+                        } label: { Label("Inverter", systemImage: "bolt.horizontal") }
+                        Divider()
+                    }
                     Picker(selection: $store.heroStyle) {
                         ForEach(HeroStyle.selectable) { Label($0.title, systemImage: $0.symbol).tag($0) }
                     } label: { Label("Illustration", systemImage: "photo") }
@@ -88,6 +96,7 @@ public struct InverterPanel: View {
     private var subtitle: String {
         guard let snapshot = store.snapshot else { return store.errorMessage == nil ? "Connecting…" : "Not connected" }
         var parts: [String] = []
+        if let name = store.selectedDeviceName { parts.append(name) }
         if let rated = snapshot.ratedPowerW, rated > 0 {
             parts.append("\(PowerFormat.kilowatts(rated)) inverter")
         }

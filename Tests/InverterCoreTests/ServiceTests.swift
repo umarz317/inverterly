@@ -343,6 +343,50 @@ final class ServiceTests: ScratchTestCase {
         }
     }
 
+    // MARK: Inverters
+
+    private static let twoDevices = #"{"total":2,"device":[{"devalias":"Upstairs","sn":"00000000000000","pn":"W0000000000000","devaddr":1,"devcode":2452,"pid":1},{"devalias":"","sn":"11111111111111","pn":"W1111111111111","devaddr":1,"devcode":2492,"pid":1}]}"#
+
+    func testListsTheInvertersAndSwitchesBetweenThem() async throws {
+        cloud.setResponder { action, parameters in
+            guard action == "webQueryDeviceEs", parameters["pagesize"] == "50" else { return nil }
+            return Fixtures.envelope(Self.twoDevices)
+        }
+        _ = try await service.fetchSnapshot()
+        let devices = try await service.listDevices()
+        XCTAssertEqual(devices.map(\.id), ["00000000000000", "11111111111111"])
+        XCTAssertEqual(devices.map(\.name), ["Upstairs", "Off Grid Tie"], "the alias, else the machine type")
+        XCTAssertEqual(devices.map(\.isSelected), [true, false])
+
+        await service.selectDevice("11111111111111")
+        let before = cloud.count("queryDeviceLastData")
+        _ = try await service.fetchSnapshot()
+        XCTAssertEqual(cloud.count("queryDeviceLastData"), before + 1, "the other inverter's reading, not the cached one")
+        XCTAssertTrue(cloud.last("queryDeviceLastData")?.query.contains("sn=11111111111111") ?? false)
+        let after = try await service.listDevices()
+        XCTAssertEqual(after.map(\.isSelected), [false, true])
+    }
+
+    func testEachInverterKeepsItsOwnHistory() async throws {
+        cloud.setResponder { action, parameters in
+            guard action == "webQueryDeviceEs", parameters["pagesize"] == "50" else { return nil }
+            return Fixtures.envelope(Self.twoDevices)
+        }
+        _ = try await service.listDevices()
+        _ = try await service.fetchDayTotals(day: "2026-10-12")
+        await service.selectDevice("11111111111111")
+        _ = try await service.fetchDayTotals(day: "2026-10-12")
+        XCTAssertEqual(cloud.count("queryDeviceDataOneDay"), 2, "the same day is read again for the other inverter")
+    }
+
+    func testResetThroughTheProtocolDropsTheCachedReading() async throws {
+        _ = try await service.fetchSnapshot()
+        let provider: any SnapshotProviding = service
+        await provider.reset()
+        _ = try await service.fetchSnapshot()
+        XCTAssertEqual(cloud.count("queryDeviceLastData"), 2)
+    }
+
     // MARK: Day totals
 
     func testAFinishedDayIsReadOnce() async throws {

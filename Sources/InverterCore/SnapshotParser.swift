@@ -28,6 +28,20 @@ public struct DeviceRef: Sendable, Equatable {
     var timeZone: TimeZone? { timeZoneOffset.flatMap { TimeZone(secondsFromGMT: $0) } }
 }
 
+/// One inverter on the account, for a picker.
+public struct DeviceInfo: Sendable, Equatable, Identifiable {
+    /// The inverter's serial number.
+    public var id: String
+    /// What to call it: its alias, else its machine type ("Off Grid Tie"), else "Inverter 2".
+    public var name: String
+    /// True for the inverter the readings are about.
+    public var isSelected: Bool
+
+    public init(id: String, name: String, isSelected: Bool = false) {
+        self.id = id; self.name = name; self.isSelected = isSelected
+    }
+}
+
 public struct PlantInfo: Sendable, Equatable {
     public var id: Int?
     public var name: String
@@ -296,15 +310,28 @@ public enum SnapshotParser {
     /// `pickDevice()` in the Node client: the device matching the preferred PN or SN, else the first.
     /// Works on both `webQueryDeviceEs` and the `queryDevices` fallback.
     public static func pickDevice(from devices: JSONValue, preferPN: String? = nil, preferSN: String? = nil) -> DeviceRef? {
-        let list = devices.arrayValue ?? devices["device"]?.arrayValue
-            ?? devices["page"]?["device"]?.arrayValue ?? devices["dat"]?.arrayValue ?? []
+        let list = deviceEntries(devices)
         guard let first = list.first else { return nil }
         let hit = list.first { device in
             if let preferPN, device["pn"]?.stringValue == preferPN { return true }
             if let preferSN, device["sn"]?.stringValue == preferSN || device["deviceAlias"]?.stringValue == preferSN { return true }
             return false
         } ?? first
-        return DeviceRef(
+        return deviceRef(hit, preferPN: preferPN, preferSN: preferSN)
+    }
+
+    /// Every device in a `webQueryDeviceEs` or `queryDevices` answer.
+    public static func allDevices(from devices: JSONValue) -> [DeviceRef] {
+        deviceEntries(devices).map { deviceRef($0) }
+    }
+
+    private static func deviceEntries(_ devices: JSONValue) -> [JSONValue] {
+        devices.arrayValue ?? devices["device"]?.arrayValue
+            ?? devices["page"]?["device"]?.arrayValue ?? devices["dat"]?.arrayValue ?? []
+    }
+
+    private static func deviceRef(_ hit: JSONValue, preferPN: String? = nil, preferSN: String? = nil) -> DeviceRef {
+        DeviceRef(
             pn: hit["pn"]?.nonEmptyString ?? preferPN ?? "",
             sn: hit["sn"]?.nonEmptyString ?? preferSN ?? "",
             devcode: hit[any: "devcode", "devCode"]?.intValue ?? 0,

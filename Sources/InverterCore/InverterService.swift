@@ -9,6 +9,10 @@ public protocol SnapshotProviding: Sendable {
     func fetchToday() async throws -> DayCurve
     /// Solar, grid and load energy for one plant day ("2026-10-13"). Nil when the cloud has nothing for it.
     func fetchDayTotals(day: String) async throws -> DayTotals?
+    /// The inverters on the account. Empty when the source has only the one.
+    func listDevices() async throws -> [DeviceInfo]
+    /// Make the readings be about this inverter (its serial number).
+    func selectDevice(_ id: String) async
     /// Forget the account, session and readings so the next fetch starts from the account file again.
     func reset() async
 }
@@ -20,6 +24,8 @@ public extension SnapshotProviding {
 
     func reset() async {}
     func fetchDayTotals(day: String) async throws -> DayTotals? { nil }
+    func listDevices() async throws -> [DeviceInfo] { [] }
+    func selectDevice(_ id: String) async {}
 }
 
 /// A provider that always answers with the values it was given. For previews, demos and tests.
@@ -64,9 +70,14 @@ public actor InverterService: SnapshotProviding {
     func setSideLookupGrace(_ seconds: TimeInterval) { sideLookupGrace = seconds }
 
     private var config: InverterConfig?
+    /// The account passed to `init(config:)`, which a reset keeps. Nil when it comes from the env file.
+    private let givenConfig: InverterConfig?
     private var client: DessMonitorClient?
     /// Found once and kept for the life of the process.
     private var device: DeviceRef?
+    private var allDevices: [DeviceRef] = []
+    /// The inverter picked from the panel; it wins over `SHINEMONITOR_SN` for this run.
+    private var chosenSN: String?
     private var deviceTask: Task<DeviceRef, Error>?
     private var plant: (at: Date, info: PlantInfo)?
     private var plantTask: Task<PlantInfo?, Never>?
@@ -83,6 +94,7 @@ public actor InverterService: SnapshotProviding {
     /// missing file shows up as an error from `fetchSnapshot()` and is picked up once it exists.
     public init(envPath: String? = nil, sessionStore: SessionStore = .standard) {
         self.envPath = envPath
+        self.givenConfig = nil
         self.sessionStore = sessionStore
         self.historyStore = .standard
         self.transport = nil
@@ -94,6 +106,7 @@ public actor InverterService: SnapshotProviding {
     /// transport, so it applies all the same.
     public init(envPath: String? = nil, sessionStore: SessionStore = .standard, transport: any HTTPTransport) {
         self.envPath = envPath
+        self.givenConfig = nil
         self.sessionStore = sessionStore
         self.historyStore = .standard
         self.transport = transport
@@ -103,6 +116,7 @@ public actor InverterService: SnapshotProviding {
     public init(config: InverterConfig, sessionStore: SessionStore = .standard) {
         self.envPath = nil
         self.config = config
+        self.givenConfig = config
         self.sessionStore = sessionStore
         self.historyStore = .standard
         self.transport = nil
@@ -114,15 +128,17 @@ public actor InverterService: SnapshotProviding {
          now: @escaping @Sendable () -> Date) {
         self.envPath = nil
         self.config = config
+        self.givenConfig = config
         self.sessionStore = sessionStore
         self.historyStore = .memoryOnly
         self.transport = transport
         self.now = now
     }
 
-    /// Drops everything tied to the old account; the next fetch re-reads the env file.
-    public func reset() {
-        config = nil; client = nil; device = nil; plant = nil
+    /// Drops everything tied to the old account; the next fetch re-reads the env file (or keeps the
+    /// account the service was made with).
+    public func reset() async {
+        config = givenConfig; client = nil; device = nil; allDevices = []; chosenSN = nil; plant = nil
         snapshotCache = nil; curveCache = nil; dayTotals = nil; emptyDays = []
         deviceTask?.cancel(); plantTask?.cancel(); snapshotTask?.cancel(); curveTask?.cancel()
         deviceTask = nil; plantTask = nil; snapshotTask = nil; curveTask = nil
@@ -238,13 +254,14 @@ public actor InverterService: SnapshotProviding {
     /// Solar, grid and load energy for one plant day. A finished day is read once and kept on disk;
     /// the day still going is read again every time.
     public func fetchDayTotals(day: String) async throws -> DayTotals? {
-        let known = dayTotals ?? historyStore.load()
-        dayTotals = known
-        if let hit = known[day], hit.complete { return hit }
-        if emptyDays.contains(day) { return nil }
-
         let client = try loadClient()
         let device = try await loadDevice(client)
+        let key = "\(device.sn)/\(day)"
+        let known = dayTotals ?? historyStore.load()
+        dayTotals = known
+        if let hit = known[key], hit.complete { return hit }
+        if emptyDays.contains(key) { return nil }
+
         let zone = await plantZone(client, device)
         let moment = now()
         let complete = day < SnapshotParser.dayString(for: moment, in: zone)
@@ -252,18 +269,61 @@ public actor InverterService: SnapshotProviding {
         do {
             dat = try await client.request("queryDeviceDataOneDay&\(device.query)&date=\(day)&i18n=en_US")
         } catch let error as DessMonitorError where error.isNoRecord {
-            if complete { emptyDays.insert(day) }
+            if complete { emptyDays.insert(key) }
             return nil
         }
         guard let totals = try SnapshotParser.dayTotals(dat, day: day, timeZone: zone, complete: complete, now: moment) else {
-            if complete { emptyDays.insert(day) }
+            if complete { emptyDays.insert(key) }
             return nil
         }
         var all = dayTotals ?? known
-        all[day] = totals
+        all[key] = totals
         dayTotals = all
         historyStore.save(all)
         return totals
+    }
+
+    // MARK: Inverters
+
+    private static let fullDeviceList = "webQueryDeviceEs&page=0&pagesize=50&i18n=en_US"
+
+    /// The inverters on the account, by the name given in the phone app, else by what each one says it is.
+    public func listDevices() async throws -> [DeviceInfo] {
+        let client = try loadClient()
+        let current = try await loadDevice(client)
+        if let listing = try? await client.request(Self.fullDeviceList) {
+            allDevices = SnapshotParser.allDevices(from: listing).filter(\.isQueryable)
+        }
+        let found = allDevices.isEmpty ? [current] : allDevices
+        let types = await withTaskGroup(of: (String, String?).self) { group in
+            for ref in found where ref.alias.isEmpty {
+                group.addTask {
+                    let reading = await Self.tolerating { try await client.request("queryDeviceLastData&\(ref.query)&i18n=en_US") }
+                    let type = reading.flatMap { try? SnapshotParser.snapshot(lastData: $0, warnings: nil, plant: nil, collectors: nil, device: ref).machineType }
+                    return (ref.sn, type)
+                }
+            }
+            var byID: [String: String] = [:]
+            for await (sn, type) in group { if let type { byID[sn] = type } }
+            return byID
+        }
+        var names = found.enumerated().map { index, ref in
+            ref.alias.isEmpty ? (types[ref.sn] ?? "Inverter \(index + 1)") : ref.alias
+        }
+        // Two of the same kind would be told apart by position.
+        for (index, name) in names.enumerated() where names.filter({ $0 == name }).count > 1 {
+            names[index] = "\(name) \(index + 1)"
+        }
+        return zip(found, names).map { DeviceInfo(id: $0.sn, name: $1, isSelected: $0.sn == current.sn) }
+    }
+
+    /// Switches the readings to another inverter. What was read for the last one is dropped.
+    public func selectDevice(_ id: String) async {
+        guard id != device?.sn else { chosenSN = id; return }
+        chosenSN = id
+        device = allDevices.first { $0.sn == id }   // nil makes the next fetch look it up again
+        snapshotTask?.cancel(); curveTask?.cancel()
+        snapshotCache = nil; snapshotTask = nil; curveCache = nil; curveTask = nil
     }
 
     // MARK: Shared lookups
@@ -304,13 +364,17 @@ public actor InverterService: SnapshotProviding {
     private func discoverDevice(_ client: DessMonitorClient) async throws -> DeviceRef {
         let listing: JSONValue
         do {
-            listing = try await client.request("webQueryDeviceEs")
+            // The plain request (as the Node client sends it) lists only the first inverter. A
+            // specific one is asked for with a page size, which lists them all.
+            let specific = chosenSN != nil || config?.inverterSN != nil || config?.collectorPN != nil
+            listing = try await client.request(specific ? Self.fullDeviceList : "webQueryDeviceEs")
         } catch let first {
             guard Self.secondListMayHelp(after: first),
                   let fallback = try? await client.request("queryDevices&page=0&pagesize=50&i18n=en_US") else { throw first }
             listing = fallback
         }
-        guard let found = SnapshotParser.pickDevice(from: listing, preferPN: config?.collectorPN, preferSN: config?.inverterSN),
+        let wantedSN = chosenSN ?? config?.inverterSN
+        guard let found = SnapshotParser.pickDevice(from: listing, preferPN: chosenSN == nil ? config?.collectorPN : nil, preferSN: wantedSN),
               found.isQueryable else {
             throw InverterDataError.noDevice
         }

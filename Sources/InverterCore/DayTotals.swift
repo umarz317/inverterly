@@ -62,7 +62,9 @@ public struct HistoryStore: Sendable {
 
     func load() -> [String: DayTotals] {
         guard let fileURL, let data = FileManager.default.contents(atPath: fileURL.path) else { return [:] }
-        return (try? JSONDecoder().decode([String: DayTotals].self, from: data)) ?? [:]
+        // Keys are "<inverter serial>/<day>". Entries from before there was more than one inverter have no serial.
+        let all = (try? JSONDecoder().decode([String: DayTotals].self, from: data)) ?? [:]
+        return all.filter { $0.key.contains("/") }
     }
 
     func save(_ days: [String: DayTotals]) {

@@ -100,6 +100,9 @@ do {
         line("today curve", "0 points for \(curve.day) (nothing reported yet today)")
     }
 
+    let inverters = try await service.listDevices()
+    line("inverters", inverters.map { $0.isSelected ? "\($0.name) (shown)" : $0.name }.joined(separator: ", "))
+
     // Yesterday and today added up (solar, estimated grid, load).
     for offset in [-1, 0] {
         let day = SnapshotParser.dayString(for: Date().addingTimeInterval(Double(offset) * 86_400), in: .current)

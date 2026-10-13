@@ -47,6 +47,8 @@ public final class AppStore: ObservableObject {
     @Published public private(set) var history: [String: DayTotals] = [:]
     @Published public private(set) var historyLoading = false
     @Published public private(set) var historyError: String?
+    /// The inverters on the account; more than one means the panel offers a switcher.
+    @Published public private(set) var devices: [DeviceInfo] = []
     /// Frame of the menu bar icon's animation. Deliberately not `@Published`: a change here must
     /// redraw the status item only, not re-evaluate the whole panel.
     public private(set) var iconPhase = 0 { didSet { if iconPhase != oldValue { iconPhaseChanged.send() } } }
@@ -74,7 +76,7 @@ public final class AppStore: ObservableObject {
     private var todayFetchedAt = Date.distantPast
     private var historyFetchedAt = Date.distantPast
 
-    private enum Keys { static let hero = "heroStyle", metric = "menuBarMetric", animate = "animateIcon" }
+    private enum Keys { static let hero = "heroStyle", metric = "menuBarMetric", animate = "animateIcon", device = "inverterSN" }
 
     public init(provider: SnapshotProviding, defaults: UserDefaults = .standard,
                 heroStyle forced: HeroStyle? = nil) {
@@ -88,7 +90,9 @@ public final class AppStore: ObservableObject {
 
     public func start() {
         guard pollTask == nil else { return }
+        let savedDevice = defaults.string(forKey: Keys.device)
         pollTask = Task { [weak self] in
+            if let savedDevice { await self?.provider.selectDevice(savedDevice) }
             while !Task.isCancelled {
                 await self?.refresh(force: false)
                 // Sleep in short steps so that opening or closing the panel changes the cadence
@@ -122,6 +126,7 @@ public final class AppStore: ObservableObject {
             signInRequired = false
             consecutiveFailures = 0
             if isNew { startIconBurst() }
+            if devices.isEmpty { Task { await loadDevices() } }
             if panelOpen && showToday { await loadToday() }
         } catch {
             errorMessage = Self.describe(error)
@@ -153,6 +158,32 @@ public final class AppStore: ObservableObject {
     }
 
     /// Forgets the account and its session and goes back to the sign-in form.
+    // MARK: Inverters
+
+    /// The name of the inverter shown, when the account has more than one.
+    public var selectedDeviceName: String? {
+        devices.count > 1 ? devices.first(where: \.isSelected)?.name : nil
+    }
+
+    private func loadDevices() async {
+        guard let found = try? await provider.listDevices(), !found.isEmpty else { return }
+        devices = found
+    }
+
+    /// Shows another inverter. Its reading, chart and history replace the last one's.
+    public func selectDevice(_ id: String) async {
+        guard devices.contains(where: { $0.id == id }), !devices.contains(where: { $0.id == id && $0.isSelected }) else { return }
+        defaults.set(id, forKey: Keys.device)
+        devices = devices.map { DeviceInfo(id: $0.id, name: $0.name, isSelected: $0.id == id) }
+        await provider.selectDevice(id)
+        snapshot = nil; today = nil; todayError = nil; errorMessage = nil
+        history = [:]; historyError = nil; historyFetchedAt = .distantPast
+        while busy { try? await Task.sleep(for: .milliseconds(100)) }
+        await refresh(force: true)
+        if showToday { await loadToday(force: true) }
+        if showHistory { await loadHistory(force: true) }
+    }
+
     public func signOut() async {
         do { try InverterConfig.signOut() } catch {
             errorMessage = "Could not remove the account: \(error.localizedDescription)"
@@ -162,6 +193,8 @@ public final class AppStore: ObservableObject {
         while busy { try? await Task.sleep(for: .milliseconds(100)) }
         snapshot = nil; today = nil; todayError = nil; errorMessage = nil
         history = [:]; historyError = nil; historyFetchedAt = .distantPast
+        devices = []
+        defaults.removeObject(forKey: Keys.device)
         signInError = nil; signInRequired = true
         stopIconBurst()
     }
