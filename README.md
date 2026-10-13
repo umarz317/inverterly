@@ -1,10 +1,14 @@
-# InverterBar
+# Inverterly
+
+> **Fork notice:** Inverterly is a personal fork of [InverterBar](https://github.com/ahkamboh/inverterbar) by Ali Hamza Kamboh, tailored for my own use. It adds in-app sign-in, an inverter switcher for accounts with more than one, daily and monthly solar, grid and load history, and other changes. Release builds are signed with my Developer ID and notarized by me, [umarz317](https://github.com/umarz317). This fork is not affiliated with or supported by the original author; please report issues with it here, not upstream.
 
 A macOS menu bar app that shows a Voltronic-type solar inverter live: what the panels are making, what the house is drawing, where the battery stands, and whether the grid is up.
 
-These inverters are sold as Axpert, MPP Solar and under many other names. They all report to the vendor cloud read by the WatchPower, SolarPower and DessMonitor phone apps, and InverterBar reads that cloud with the account you already have.
+![The Inverterly panel on solar, on battery and on grid (made-up readings)](docs/inverterly.gif)
 
-The menu bar item is a level bar with a rising sun while the panels produce and a crescent moon when they don't, with the battery percent beside it (or load, or solar). Click it for an animated picture of the energy flow, the load, tiles for solar, battery, grid and output, a chart of today, and a details list.
+These inverters are sold as Axpert, MPP Solar and under many other names. They all report to the vendor cloud read by the WatchPower, SolarPower and DessMonitor phone apps, and Inverterly reads that cloud with the account you already have.
+
+The menu bar shows the battery percent, load, solar, or solar and grid together, each with its own icon; or just the app's glyph, a sun over a wave that turns to a moon when the panels make nothing. Click it for an animated picture of the energy flow, the load, tiles for solar, battery, grid and output, today's chart of solar, grid and load with totals so far, daily and monthly history, and a details list.
 
 It only reads. No code path in the app can change an inverter setting. This is an unofficial project, not affiliated with Voltronic, DessMonitor, ShineMonitor or any inverter brand.
 
@@ -20,7 +24,7 @@ It only reads. No code path in the app can change an inverter setting. This is a
 ./Scripts/build-app.sh install
 ```
 
-This builds a release binary, wraps it as `InverterBar.app`, copies it to `~/Applications` and opens it. Without `install` it only builds into `dist/`. The app is signed ad hoc, which is enough to run on the Mac that built it.
+This builds a release binary, wraps it as `Inverterly.app`, copies it to `~/Applications` and opens it. Without `install` it only builds into `dist/`. The app is signed ad hoc, which is enough to run on the Mac that built it.
 
 ### Release DMG
 
@@ -28,24 +32,26 @@ This builds a release binary, wraps it as `InverterBar.app`, copies it to `~/App
 ./Scripts/make-dmg.sh
 ```
 
-This builds `dist/InverterBar-<version>.dmg` with the app signed by your Developer ID Application identity (the first one in your keychain, or `INVERTERBAR_CODESIGN_IDENTITY`) using the hardened runtime, and signs the DMG too. To notarize and staple it, store notarytool credentials once with `xcrun notarytool store-credentials <name>` and run with `INVERTERBAR_NOTARY_PROFILE=<name>`. Without notarization, other Macs show a Gatekeeper warning on first open.
+This builds `dist/Inverterly-<version>.dmg` with the app signed by your Developer ID Application identity (the first one in your keychain, or `INVERTERLY_CODESIGN_IDENTITY`) using the hardened runtime, and signs the DMG too. To notarize and staple it, store notarytool credentials once with `xcrun notarytool store-credentials <name>` and run with `INVERTERLY_NOTARY_PROFILE=<name>`. Without notarization, other Macs show a Gatekeeper warning on first open.
 
 ## Sign in
 
-Click the menu bar item and enter your phone-app username and password. InverterBar works out which of the three apps the account belongs to and starts reading.
+Click the menu bar item and enter your phone-app username and password. Inverterly works out which of the three apps the account belongs to and starts reading.
 
 To switch accounts, open the three-dot menu and choose **Sign out**.
 
-The account is saved to `~/.config/inverterbar/.env`, readable only by you. The login session is kept in `~/Library/Application Support/InverterBar/session.json`, also private. The password never appears in an error message or a log.
+The account is saved to `~/.config/inverterly/.env`, readable only by you. The login session is kept in `~/Library/Application Support/Inverterly/session.json`, also private. The password never appears in an error message or a log.
+
+Coming from InverterBar: on first launch Inverterly moves `~/.config/inverterbar` and `~/Library/Application Support/InverterBar` to the new names, so the saved login and history carry over. `INVERTERBAR_ENV` is still read. Settings from the menu (illustration, menu bar choice, open at login) start fresh.
 
 ### Configure by hand
 
 You can write the file yourself instead:
 
 ```bash
-mkdir -p ~/.config/inverterbar
-cp .env.example ~/.config/inverterbar/.env
-chmod 600 ~/.config/inverterbar/.env
+mkdir -p ~/.config/inverterly
+cp .env.example ~/.config/inverterly/.env
+chmod 600 ~/.config/inverterly/.env
 ```
 
 ```
@@ -60,27 +66,27 @@ SHINEMONITOR_APP=dessmonitor
 
 The app looks for the file in this order:
 
-1. the path in the `INVERTERBAR_ENV` environment variable
-2. the path saved with `defaults write com.loopbreak.inverterbar envPath "/path/to/.env"`
-3. `~/.config/inverterbar/.env`
+1. the path in the `INVERTERLY_ENV` environment variable
+2. the path saved with `defaults write com.loopbreak.inverterly envPath "/path/to/.env"`
+3. `~/.config/inverterly/.env`
 4. `~/Documents/inverter-control/.env`, if the file above does not exist
 
-If the file is in Documents, Desktop or Downloads, macOS asks once whether InverterBar may read that folder. If you say no, the panel reports that it cannot find the file; change the answer in System Settings under Privacy & Security, Files and Folders.
+If the file is in Documents, Desktop or Downloads, macOS asks once whether Inverterly may read that folder. If you say no, the panel reports that it cannot find the file; change the answer in System Settings under Privacy & Security, Files and Folders.
 
 ## History
 
 Open **History** in the panel for how much solar you made, how much came from the grid and how much you used (the load), in kWh. **Days** lists each day of this month with a month total; **Months** adds up every month the cloud still has.
 
-Each day is added up from the logger's 5-minute readings, which matches the cloud's own daily solar figure to within about 1%. Grid is estimated, as in the details list. A finished day is read once and kept in `~/Library/Application Support/InverterBar/history.json`; only today is read again. Sign out deletes it.
+Each day is added up from the logger's 5-minute readings, which matches the cloud's own daily solar figure to within about 1%. Grid is estimated, as in the details list. A finished day is read once and kept in `~/Library/Application Support/Inverterly/history.json`; only today is read again. Sign out deletes it.
 
 ## Options
 
 The three-dot menu has:
 
-- **Illustration**: the animated picture in the panel. Inverter, Flow map or House.
-- **Menu bar shows**: battery percent, load, solar, or the icon alone.
-- **Animate menu bar icon**: the icon moves briefly when a new reading arrives. Turn it off for a still icon.
 - **Inverter**: when the account has more than one, which inverter the panel and menu bar show. Each keeps its own history.
+- **Illustration**: the animated picture in the panel. Inverter, Flow map or House.
+- **Menu bar shows**: battery percent, load, solar, solar and grid together, or the icon alone.
+- **Animate menu bar icon**: the icon moves briefly when a new reading arrives. Turn it off for a still icon.
 - **Open at login**
 - **Sign out**
 
@@ -99,10 +105,10 @@ Left running, it uses about 0.17% of one CPU core and 17 MB of memory with the p
 ## Run from source
 
 ```bash
-swift run InverterBar
+swift run Inverterly
 ```
 
-Print one live reading in the terminal:
+Print one live reading in the terminal, with the inverters on the account and yesterday's and today's totals:
 
 ```bash
 swift run InverterProbe
@@ -118,10 +124,10 @@ swift run InverterProbe
 
 - `Sources/InverterCore`: cloud client, request signing, parsing and the `EnergySnapshot` model. No UI.
 - `Sources/InverterUI`: the status item and panel window, SwiftUI views, menu bar icon, and the illustrations in `Hero/`. Each illustration is one `Canvas` that is a pure function of the reading and the time.
-- `Sources/InverterBar`: the app entry point.
-- `Sources/InverterProbe`: prints one live reading.
+- `Sources/Inverterly`: the app entry point.
+- `Sources/InverterProbe`: prints one live reading, the inverters on the account and two days of totals.
 
-Run the tests with `swift test`. Their fixtures are real answers from one inverter with serial numbers and ids replaced.
+Run the tests with `swift test`: `Tests/InverterCoreTests` for the cloud client, parsing and history, `Tests/InverterUITests` for the panel's state (history loading, switching inverters). The fixtures are real answers from one inverter with serial numbers and ids replaced.
 
 `Tools/scan-secrets.py` checks that none of your account's values (username, password, serials, session token) has ended up in the repository. Run it before pushing a fork.
 
