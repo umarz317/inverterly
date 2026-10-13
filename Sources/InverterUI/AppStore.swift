@@ -106,7 +106,10 @@ public final class AppStore: ObservableObject {
     private var lastAttempt = Date.distantPast
     private var consecutiveFailures = 0
     private var todayFetchedAt = Date.distantPast
-    private var historyFetchedAt = Date.distantPast
+    /// When each tab last read its months: Days reads only this one, Months reads back from it.
+    private var historyFetchedAt: [HistoryTab: Date] = [:]
+    /// Bumped whenever the readings are cleared, so a history load started before that is dropped.
+    private var historyGeneration = 0
 
     private enum Keys { static let hero = "heroStyle", metric = "menuBarMetric", animate = "animateIcon", device = "inverterSN" }
 
@@ -198,7 +201,8 @@ public final class AppStore: ObservableObject {
     private func clearReadings() {
         snapshot = nil; errorMessage = nil
         today = nil; todayError = nil; todayFetchedAt = .distantPast
-        history = [:]; historyError = nil; historyFetchedAt = .distantPast
+        history = [:]; historyError = nil; historyFetchedAt = [:]
+        historyGeneration += 1
     }
 
     // MARK: Inverters
@@ -211,6 +215,8 @@ public final class AppStore: ObservableObject {
     private func loadDevices() async {
         guard let found = try? await provider.listDevices(), !found.isEmpty else { return }
         devices = found
+        // Remembered so that on the next launch the saved history shows before the cloud answers.
+        if let selected = found.first(where: \.isSelected) { defaults.set(selected.id, forKey: Keys.device) }
     }
 
     /// Shows another inverter. Its reading, chart and history replace the last one's.
@@ -276,19 +282,36 @@ public final class AppStore: ObservableObject {
     /// Reads the days of this month, and for the Months tab the months before it, until one has
     /// nothing. Finished days come from disk after the first time; only today is read again.
     public func loadHistory(force: Bool = false) async {
-        guard !historyLoading, force || Date().timeIntervalSince(historyFetchedAt) > 300 else { return }
+        if historyLoading {
+            guard force else { return }
+            // A forced load (after switching inverter) must not be dropped: let the running one end first.
+            while historyLoading { try? await Task.sleep(for: .milliseconds(100)) }
+        }
+        // Nothing on screen is always worth a read: the saved days cost no network.
+        let tab = historyTab
+        let last = historyFetchedAt[tab] ?? .distantPast
+        guard force || currentMonthDays.isEmpty || Date().timeIntervalSince(last) > 300 else { return }
+        let generation = historyGeneration
         historyLoading = true
         historyError = nil
-        defer { historyLoading = false; historyFetchedAt = Date() }
+        defer {
+            historyLoading = false
+            if generation == historyGeneration { historyFetchedAt[tab] = Date() }
+        }
 
         // Day keys are Gregorian, as the cloud's are, whatever calendar the Mac is set to.
         let calendar = Calendar(identifier: .gregorian)
         let today = calendar.startOfDay(for: Date())
         var month = calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today
-        let monthsToRead = historyTab == .days ? 1 : 24
+        let monthsToRead = tab == .days ? 1 : 24
         for index in 0..<monthsToRead {
-            let days = Self.days(of: month, upTo: today, calendar: calendar)
-            guard await readDays(days) || index == 0 else { break }
+            var days = Self.days(of: month, upTo: today, calendar: calendar)
+            if index == 0, let current = days.popLast() {
+                // Finished days come from disk at once; today needs the cloud, so it follows on its own.
+                _ = await readDays(days, generation: generation)
+                days = [current]
+            }
+            guard await readDays(days, generation: generation) || index == 0, generation == historyGeneration else { break }
             guard let earlier = calendar.date(byAdding: .month, value: -1, to: month) else { break }
             month = earlier
         }
@@ -302,7 +325,7 @@ public final class AppStore: ObservableObject {
 
     /// Reads these days, three at a time, and publishes them together (one panel update, not one per day).
     /// True if any of them has data.
-    private func readDays(_ days: [String]) async -> Bool {
+    private func readDays(_ days: [String], generation: Int) async -> Bool {
         let provider = self.provider
         var pending = days.filter { history[$0]?.complete != true }.makeIterator()
         var read: [String: DayTotals] = [:]
@@ -318,6 +341,8 @@ public final class AppStore: ObservableObject {
                 if let next = pending.next() { group.addTask { await Self.read(next, from: provider) } }
             }
         }
+        // Readings were cleared (another inverter, a sign-out) while these were out: they are stale.
+        guard generation == historyGeneration else { return false }
         if !read.isEmpty { history.merge(read) { $1 } }
         if let failure { historyError = Self.describe(failure) }
         return days.contains { history[$0] != nil }

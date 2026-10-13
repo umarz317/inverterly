@@ -89,8 +89,6 @@ public actor InverterService: SnapshotProviding {
     /// Daily totals by "<serial>/<day>", read from disk on first use.
     private var dayTotals: [String: DayTotals]?
     private var historySave: Task<Void, Never>?
-    /// Days the cloud had nothing for, so a list is not asked again for each of them.
-    private var emptyDays: Set<String> = []
 
     /// Reads the account from the env file on first use (see `InverterConfig.resolvePath`), so a
     /// missing file shows up as an error from `fetchSnapshot()` and is picked up once it exists.
@@ -127,12 +125,12 @@ public actor InverterService: SnapshotProviding {
 
     /// For tests: a canned transport and a controllable clock.
     init(config: InverterConfig, sessionStore: SessionStore, transport: any HTTPTransport,
-         now: @escaping @Sendable () -> Date) {
+         now: @escaping @Sendable () -> Date, historyStore: HistoryStore = .memoryOnly) {
         self.envPath = nil
         self.config = config
         self.givenConfig = config
         self.sessionStore = sessionStore
-        self.historyStore = .memoryOnly
+        self.historyStore = historyStore
         self.transport = transport
         self.now = now
     }
@@ -141,7 +139,7 @@ public actor InverterService: SnapshotProviding {
     /// account the service was made with).
     public func reset() async {
         config = givenConfig; client = nil; device = nil; allDevices = []; chosenSN = nil; plant = nil
-        snapshotCache = nil; curveCache = nil; dayTotals = nil; emptyDays = []
+        snapshotCache = nil; curveCache = nil; dayTotals = nil
         historySave?.cancel(); historySave = nil   // a sign-out has just deleted the file; do not write it back
         deviceTask?.cancel(); plantTask?.cancel(); snapshotTask?.cancel(); curveTask?.cancel()
         deviceTask = nil; plantTask = nil; snapshotTask = nil; curveTask = nil
@@ -257,13 +255,13 @@ public actor InverterService: SnapshotProviding {
     /// Solar, grid and load energy for one plant day. A finished day is read once and kept on disk;
     /// the day still going is read again every time.
     public func fetchDayTotals(day: String) async throws -> DayTotals? {
+        // A finished day already on disk needs no login and no device lookup, as long as the
+        // inverter is known (found earlier, or picked in the panel).
+        if let sn = device?.sn ?? chosenSN, let saved = savedDay(sn, day) { return saved }
         let client = try loadClient()
         let device = try await loadDevice(client)
+        if let saved = savedDay(device.sn, day) { return saved }
         let key = "\(device.sn)/\(day)"
-        let known = dayTotals ?? historyStore.load()
-        dayTotals = known
-        if let hit = known[key], hit.complete { return hit }
-        if emptyDays.contains(key) { return nil }
 
         let zone = await plantZone(client, device)
         let moment = now()
@@ -272,16 +270,34 @@ public actor InverterService: SnapshotProviding {
         do {
             dat = try await client.request("queryDeviceDataOneDay&\(device.query)&date=\(day)&i18n=en_US")
         } catch let error as DessMonitorError where error.isNoRecord {
-            if complete { emptyDays.insert(key) }
+            if complete { markEmpty(key, day) }
             return nil
         }
         guard let totals = try SnapshotParser.dayTotals(dat, day: day, timeZone: zone, complete: complete, now: moment) else {
-            if complete { emptyDays.insert(key) }
+            if complete { markEmpty(key, day) }
             return nil
         }
         dayTotals?[key] = totals
         if complete { scheduleHistorySave() }
         return totals
+    }
+
+    /// The saved answer for a finished day: `.some(totals)`, `.some(nil)` for a day the cloud had
+    /// nothing for, or nil when it has not been read yet.
+    private func savedDay(_ sn: String, _ day: String) -> DayTotals?? {
+        let known = dayTotals ?? historyStore.load()
+        dayTotals = known
+        let key = "\(sn)/\(day)"
+        if let hit = known[key], hit.complete { return .some(hit) }
+        if known["empty/\(key)"] != nil { return .some(nil) }
+        return nil
+    }
+
+    /// Remembers on disk that a finished day has no reports (before the inverter was installed, or
+    /// a day the logger was off), so it is not asked for again on every launch.
+    private func markEmpty(_ key: String, _ day: String) {
+        dayTotals?["empty/\(key)"] = DayTotals(day: day, solarKWh: 0, gridKWh: 0, loadKWh: 0, complete: true)
+        scheduleHistorySave()
     }
 
     /// Writes the finished days to disk once a burst of reads has settled, not after every day.

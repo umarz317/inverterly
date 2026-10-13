@@ -397,6 +397,37 @@ final class ServiceTests: ScratchTestCase {
         XCTAssertEqual(cloud.count("queryDeviceDataOneDay"), 1)
     }
 
+    func testASavedDayNeedsNoNetworkOnTheNextLaunch() async throws {
+        let file = HistoryStore(fileURL: scratch.appendingPathComponent("history.json"))
+        let first = InverterService(config: TestAccount.config, sessionStore: store, transport: cloud, now: clock.reader, historyStore: file)
+        let read = try await first.fetchDayTotals(day: "2026-10-12")
+        try await Task.sleep(for: .seconds(1.3))   // the save waits for reads to settle
+
+        let before = cloud.urls.count
+        let next = InverterService(config: TestAccount.config, sessionStore: .memoryOnly, transport: cloud, now: clock.reader, historyStore: file)
+        await next.selectDevice("00000000000000")
+        let again = try await next.fetchDayTotals(day: "2026-10-12")
+        XCTAssertEqual(again, read)
+        XCTAssertEqual(cloud.urls.count, before, "no login, no device list, no day request")
+    }
+
+    func testADayWithNoReportsIsNotAskedForAgain() async throws {
+        let file = HistoryStore(fileURL: scratch.appendingPathComponent("history.json"))
+        cloud.setResponder { action, parameters in
+            action == "queryDeviceDataOneDay" && parameters["date"] == "2026-09-01" ? Fixtures.failure(12, "ERR_NO_RECORD") : nil
+        }
+        let first = InverterService(config: TestAccount.config, sessionStore: store, transport: cloud, now: clock.reader, historyStore: file)
+        let none = try await first.fetchDayTotals(day: "2026-09-01")
+        XCTAssertNil(none)
+        try await Task.sleep(for: .seconds(1.3))
+
+        let next = InverterService(config: TestAccount.config, sessionStore: .memoryOnly, transport: cloud, now: clock.reader, historyStore: file)
+        await next.selectDevice("00000000000000")
+        let stillNone = try await next.fetchDayTotals(day: "2026-09-01")
+        XCTAssertNil(stillNone)
+        XCTAssertEqual(cloud.count("queryDeviceDataOneDay"), 1, "the empty day was remembered across launches")
+    }
+
     func testTheDayStillGoingIsReadAgain() async throws {
         let first = try await service.fetchDayTotals(day: "2026-10-13")
         _ = try await service.fetchDayTotals(day: "2026-10-13")
