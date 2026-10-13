@@ -51,7 +51,7 @@ The gear opens settings: pick the inverter, choose the illustration, sign out. P
   <img src="docs/ios/inverterly-ios.gif" width="260" alt="The Inverterly iPhone app: Now, Today and History tabs (made-up readings)">
 </p>
 
-There is no release or download for it, and it is not on the App Store: you build it onto your own iPhone or iPad with Xcode and your own signing team. Open `iOS/Inverterly.xcodeproj` in Xcode, choose the **Inverterly iOS** scheme, set your signing team and run it on a simulator or your device. See [iOS/README.md](iOS/README.md) for installing on a real iPhone and for how sign-in is stored.
+There is no release or download for it, and it is not on the App Store: you build it onto your own iPhone or iPad with Xcode and your own signing team. Open `iOS/Inverterly.xcodeproj` in Xcode, choose the **Inverterly iOS** scheme, set your own signing team under Signing & Capabilities (the project ships with it blank) and run it on a simulator or your device. With a free personal team, also change the bundle identifier to your own. See [iOS/README.md](iOS/README.md) for installing on a real iPhone and for how sign-in is stored.
 
 ## Sign in
 
