@@ -1,11 +1,11 @@
-# Inverterly for iPhone
+# Inverterly for iOS
 
-> **Fork notice:** Inverterly is a personal fork of [InverterBar](https://github.com/ahkamboh/inverterbar) by Ali Hamza Kamboh, tailored for my own use. This branch adds an iPhone and iPad app. It is not notarized, not on the App Store and has no release or download: you build it onto your own iPhone with Xcode. This fork is not affiliated with or supported by the original author; please report issues with it here, not upstream.
+> **Fork notice:** Inverterly is a personal fork of [InverterBar](https://github.com/ahkamboh/inverterbar) by Ali Hamza Kamboh, tailored for my own use. This branch adds an iOS app. It is not notarized, not on the App Store and has no release or download: you build it onto your own device with Xcode. This fork is not affiliated with or supported by the original author; please report issues with it here, not upstream.
 
-An iPhone and iPad app (iOS 17 or later) that shows a Voltronic-type solar inverter live: what the panels are making, what the house is drawing, where the battery stands, and whether the grid is up.
+An iOS app (iOS 17 or later) that shows a Voltronic-type solar inverter live: what the panels are making, what the house is drawing, where the battery stands, and whether the grid is up.
 
 <p align="center">
-  <img src="docs/ios/inverterly-ios.gif" width="260" alt="The Inverterly iPhone app: Now, Today and History tabs (made-up readings)">
+  <img src="docs/ios/inverterly-ios.gif" width="260" alt="The Inverterly iOS app: Now, Today and History tabs (made-up readings)">
 </p>
 
 These inverters are sold as Axpert, MPP Solar and under many other names. They all report to the vendor cloud read by the WatchPower, SolarPower and DessMonitor phone apps, and Inverterly reads that cloud with the account you already have.
@@ -29,7 +29,7 @@ The dot under each title is green while readings are fresh, orange once the logg
 
 ## Requirements
 
-- iOS or iPadOS 17 or later.
+- iOS 17 or later.
 - Xcode 16 or later to build it.
 - An Apple development team for signing. A free personal team works; its builds stop opening after seven days and have to be installed again.
 - An inverter with a Wi-Fi logger that already reports to DessMonitor, WatchPower or SolarPower, and the login you use in that phone app.
@@ -38,7 +38,7 @@ The dot under each title is green while readings are fresh, orange once the logg
 
 Open `iOS/Inverterly.xcodeproj`, choose the **Inverterly iOS** scheme, set your own signing team under Signing & Capabilities (the project ships with it blank) and run it on a simulator or your device. With a free personal team, also change the bundle identifier to your own.
 
-To install on a real iPhone, with every step and fix, see [iOS/README.md](iOS/README.md).
+To install on a real device, with every step and fix, see [iOS/README.md](iOS/README.md).
 
 ## Sign in
 
@@ -56,14 +56,14 @@ Grid power is not in the vendor's data for this kind of inverter. The app estima
 
 ## Documentation
 
-- [iOS/README.md](iOS/README.md): installing on your iPhone, demo mode, and how the app is built.
+- [iOS/README.md](iOS/README.md): installing on your device, demo mode, and how the app is built.
 - [docs/API.md](docs/API.md): the cloud API: hosts, login and request signing, each route the app uses, and the settings routes it deliberately does not send.
 - [docs/LIBRARY.md](docs/LIBRARY.md): using `InverterCore` from your own Swift code.
 
 ## Code layout
 
 - `iOS`: the Xcode project and thin app shell. See [iOS/README.md](iOS/README.md).
-- `Sources/InverterUI/Phone`: the iPhone and iPad screens, compiled only for iOS.
+- `Sources/InverterUI/Phone`: the iOS screens, compiled only for iOS.
 - `Sources/InverterUI`: the store, illustrations and shared views.
 - `Sources/InverterCore`: cloud client, request signing, parsing and the `EnergySnapshot` model. No UI.
 
