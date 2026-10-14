@@ -1,8 +1,18 @@
-# Inverterly for iOS
+# Inverterly for Android and iOS
 
-> **Fork notice:** Inverterly is a personal fork of [InverterBar](https://github.com/ahkamboh/inverterbar) by Ali Hamza Kamboh, tailored for my own use. This branch adds an iOS app. It is not notarized, not on the App Store and has no release or download: you build it onto your own device with Xcode. This fork is not affiliated with or supported by the original author; please report issues with it here, not upstream.
+> **Fork notice:** Inverterly is a personal fork of [InverterBar](https://github.com/ahkamboh/inverterbar) by Ali Hamza Kamboh, tailored for my own use. This branch adds an Android app and an iOS app. Neither is on a store and neither has a public release or download: you build them onto your own device, the iOS one with Xcode and the Android one with Gradle. This fork is not affiliated with or supported by the original author; please report issues with it here, not upstream.
 
-An iOS app (iOS 17 or later) that shows a Voltronic-type solar inverter live: what the panels are making, what the house is drawing, where the battery stands, and whether the grid is up.
+An Android app (Android 8 or later) and an iOS app (iOS 17 or later) that show a Voltronic-type solar inverter live: what the panels are making, what the house is drawing, where the battery stands, and whether the grid is up.
+
+### Android
+
+<p align="center">
+  <img src="docs/android/now.png" width="240" alt="The Android Now tab: live reading, energy flow and tiles (made-up readings)">
+  <img src="docs/android/today.png" width="240" alt="The Android Today tab: energy mix, power chart and battery (made-up readings)">
+  <img src="docs/android/history.png" width="240" alt="The Android History tab: monthly mix, a bar per day and the list (made-up readings)">
+</p>
+
+### iOS
 
 <p align="center">
   <img src="docs/ios/inverterly-ios.gif" width="260" alt="The Inverterly iOS app: Now, Today and History tabs (made-up readings)">
@@ -17,7 +27,7 @@ It only reads. No code path in the app can change an inverter setting. This is a
 - **Now**: whether the house runs on solar, battery or grid, the animated energy flow, the load against the inverter's rating, and a tile each for solar, battery, grid and output. Details (voltages, currents, frequency, logger status) are underneath.
 - **Today**: how much of today's energy came from the sun, with solar, grid and load totals; the day's power curve, which you can drag across to read any moment; the day's peaks; and the battery's charge through the day.
 - **History**: Days for this month or Months going back, with the period's energy mix, a bar per day or month (drag to pick one), and the list.
-- **Settings** (the gear): pick the inverter when the account has more than one, choose the illustration, and sign out.
+- **Settings** (the gear): pick the inverter when the account has more than one, choose the illustration (iOS), and sign out.
 
 <p align="center">
   <img src="docs/ios/now.png" width="240" alt="The Now tab (made-up readings)">
@@ -29,6 +39,7 @@ The dot under each title is green while readings are fresh, orange once the logg
 
 ## Requirements
 
+- Android 8.0 or later, JDK 17 and the Android SDK to build the Android app, or
 - iOS 17 or later.
 - Xcode 16 or later to build it.
 - An Apple development team for signing. A free personal team works; its builds stop opening after seven days and have to be installed again.
@@ -36,7 +47,9 @@ The dot under each title is green while readings are fresh, orange once the logg
 
 ## Build and run
 
-Open `iOS/Inverterly.xcodeproj`, choose the **Inverterly iOS** scheme, set your own signing team under Signing & Capabilities (the project ships with it blank) and run it on a simulator or your device. With a free personal team, also change the bundle identifier to your own.
+**Android:** open the `android` folder in Android Studio and run it, or `cd android && ./gradlew :app:installDebug` with a phone connected. See [android/README.md](android/README.md).
+
+**iOS:** open `iOS/Inverterly.xcodeproj`, choose the **Inverterly iOS** scheme, set your own signing team under Signing & Capabilities (the project ships with it blank) and run it on a simulator or your device. With a free personal team, also change the bundle identifier to your own.
 
 To install on a real device, with every step and fix, see [iOS/README.md](iOS/README.md).
 
@@ -44,7 +57,7 @@ To install on a real device, with every step and fix, see [iOS/README.md](iOS/RE
 
 Use the username and password from your inverter's monitoring phone app. The app tries each of the three cloud identities in turn and keeps the one that works.
 
-The password goes into the iOS Keychain. The username and app identity are saved in the app's own container, and the login session next to it. With **Remember me** off, the account, session and saved history are removed the next time the app is launched, so it asks again. The password never appears in an error message or a log.
+The password goes into the iOS Keychain (on Android, an Android Keystore key encrypts it). The username and app identity are saved in the app's own container, and the login session next to it. With **Remember me** off, the account, session and saved history are removed the next time the app is launched, so it asks again. The password never appears in an error message or a log.
 
 ## How fresh the numbers are
 
