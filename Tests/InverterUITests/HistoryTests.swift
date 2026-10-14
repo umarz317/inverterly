@@ -86,4 +86,16 @@ final class HistoryTests: XCTestCase {
         await store.loadHistory(force: true)
         XCTAssertEqual(store.months.count, 2, "this month and the one before; the third has nothing")
     }
+
+    func testMonthsTabReadsEveryMonthBackToTheFirst() async {
+        let earliest = Calendar.current.date(byAdding: .month, value: -5, to: Date())!
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM"
+        let store = store(first: formatter.string(from: earliest) + "-01")
+        store.historyTab = .months
+        await store.loadHistory(force: true)
+        XCTAssertEqual(store.months.count, 6)
+        let days = Calendar(identifier: .gregorian).range(of: .day, in: .month, for: earliest)!.count
+        XCTAssertEqual(store.months.last?.days, days, "the oldest month is published whole")
+    }
 }

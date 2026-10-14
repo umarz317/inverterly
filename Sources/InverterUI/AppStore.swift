@@ -313,18 +313,55 @@ public final class AppStore: ObservableObject {
         // Day keys are Gregorian, as the cloud's are, whatever calendar the Mac is set to.
         let calendar = Calendar(identifier: .gregorian)
         let today = calendar.startOfDay(for: Date())
-        var month = calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today
-        let monthsToRead = tab == .days ? 1 : 24
-        for index in 0..<monthsToRead {
-            var days = Self.days(of: month, upTo: today, calendar: calendar)
-            if index == 0, let current = days.popLast() {
-                // Finished days come from disk at once; today needs the cloud, so it follows on its own.
-                _ = await readDays(days, generation: generation)
-                days = [current]
+        let month = calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today
+        var days = Self.days(of: month, upTo: today, calendar: calendar)
+        if let current = days.popLast() {
+            // Finished days come from disk at once; today needs the cloud, so it follows on its own.
+            _ = await readDays(days, generation: generation)
+            _ = await readDays([current], generation: generation)
+        }
+        guard tab == .months, generation == historyGeneration else { return }
+        let earlier = (1..<24).compactMap { calendar.date(byAdding: .month, value: -$0, to: month) }
+        await readMonths(earlier.map { Self.days(of: $0, upTo: today, calendar: calendar) }, generation: generation)
+    }
+
+    /// Reads earlier months, newest first, until one has nothing. Three days stay in flight across
+    /// month boundaries (a month no longer waits for the last day of the one before), and each month
+    /// is published once all of it is in.
+    private func readMonths(_ months: [[String]], generation: Int) async {
+        let provider = self.provider
+        let wanted = months.map { $0.filter { history[$0]?.complete != true } }
+        var remaining = wanted.map(\.count)
+        var read = Array(repeating: [String: DayTotals](), count: months.count)
+        var pending = wanted.enumerated().lazy.flatMap { index, days in days.map { (index, $0) } }.makeIterator()
+        var published = 0
+        var stop = false
+
+        /// Publishes every finished month in order; stops at the first with nothing or a stale load.
+        func publishFinished() {
+            while !stop, published < months.count, remaining[published] == 0 {
+                guard generation == historyGeneration else { stop = true; return }
+                if !read[published].isEmpty { history.merge(read[published]) { $1 } }
+                stop = !months[published].contains { history[$0] != nil }
+                published += 1
             }
-            guard await readDays(days, generation: generation) || index == 0, generation == historyGeneration else { break }
-            guard let earlier = calendar.date(byAdding: .month, value: -1, to: month) else { break }
-            month = earlier
+        }
+
+        publishFinished()   // months already read in full need no request
+        await withTaskGroup(of: (Int, String, DayTotals?, Error?).self) { group in
+            func addNext() {
+                guard !stop, let (index, day) = pending.next() else { return }
+                group.addTask { let (_, totals, error) = await Self.read(day, from: provider); return (index, day, totals, error) }
+            }
+            for _ in 0..<3 { addNext() }
+            while let (index, day, totals, error) = await group.next() {
+                if let totals { read[index][day] = totals }
+                if let error, generation == historyGeneration { historyError = Self.describe(error) }
+                remaining[index] -= 1
+                publishFinished()
+                if stop { group.cancelAll(); return }
+                addNext()
+            }
         }
     }
 

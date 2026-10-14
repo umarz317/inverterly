@@ -22,6 +22,8 @@ import com.loopbreak.inverterly.core.NoAccountError
 import com.loopbreak.inverterly.core.SessionStore
 import com.loopbreak.inverterly.core.SnapshotProviding
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -294,19 +296,15 @@ class AppStore(
         historyError = null
         try {
             val today = LocalDate.now(zone)
-            var month = today.withDayOfMonth(1)
-            val monthsToRead = if (tab == HistoryTab.Days) 1 else 24
-            for (index in 0 until monthsToRead) {
-                var list = daysOf(month, today)
-                if (index == 0 && list.isNotEmpty()) {
-                    // Finished days come from disk at once; today needs the cloud, so it follows on its own.
-                    val current = list.last()
-                    readDays(list.dropLast(1), generation)
-                    list = listOf(current)
-                }
-                val any = readDays(list, generation)
-                if (!(any || index == 0) || generation != historyGeneration) break
-                month = month.minusMonths(1)
+            val month = today.withDayOfMonth(1)
+            val list = daysOf(month, today)
+            if (list.isNotEmpty()) {
+                // Finished days come from disk at once; today needs the cloud, so it follows on its own.
+                readDays(list.dropLast(1), generation)
+                readDays(listOf(list.last()), generation)
+            }
+            if (tab == HistoryTab.Months && generation == historyGeneration) {
+                readMonths((1 until 24).map { daysOf(month.minusMonths(it.toLong()), today) }, generation)
             }
         } finally {
             historyLoading = false
@@ -322,31 +320,51 @@ class AppStore(
      * True if any of them has data.
      */
     private suspend fun readDays(wanted: List<String>, generation: Int): Boolean {
-        val pending = wanted.filter { days[it]?.complete != true }
-        val gate = Semaphore(3)
         var failure: Exception? = null
-        val results = coroutineScope {
-            pending.map { day ->
-                async {
-                    gate.withPermit {
-                        try {
-                            day to provider.fetchDayTotals(day)
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            failure = e
-                            day to null
-                        }
-                    }
-                }
-            }.awaitAll()
-        }
+        val read = coroutineScope { fetchDays(wanted, Semaphore(3)) { failure = it } }.await()
         // Readings were cleared (another inverter, a sign-out) while these were out: they are stale.
         if (generation != historyGeneration) return false
-        val read = results.mapNotNull { (day, totals) -> totals?.let { day to it } }.toMap()
         if (read.isNotEmpty()) days = days + read
         failure?.let { historyError = describe(it) }
         return wanted.any { days[it] != null }
+    }
+
+    /**
+     * Reads earlier months, newest first, until one has nothing. Three days stay in flight across
+     * month boundaries (a month no longer waits for the last day of the one before; the gate hands
+     * out its permits in order), and each month is published once all of it is in.
+     */
+    private suspend fun readMonths(months: List<List<String>>, generation: Int) = coroutineScope {
+        val gate = Semaphore(3)
+        var failure: Exception? = null
+        val reads = months.map { fetchDays(it, gate) { e -> failure = e } }
+        for ((index, read) in reads.withIndex()) {
+            val result = read.await()
+            if (generation != historyGeneration) break
+            if (result.isNotEmpty()) days = days + result
+            failure?.let { historyError = describe(it) }
+            if (months[index].none { days[it] != null }) break
+        }
+        reads.forEach { it.cancel() }
+    }
+
+    /** Starts reading the days not already complete; the result holds those that had data. */
+    private fun CoroutineScope.fetchDays(wanted: List<String>, gate: Semaphore, onFailure: (Exception) -> Unit): Deferred<Map<String, DayTotals>> {
+        val reads = wanted.filter { days[it]?.complete != true }.map { day ->
+            async {
+                gate.withPermit {
+                    try {
+                        provider.fetchDayTotals(day)?.let { day to it }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        onFailure(e)
+                        null
+                    }
+                }
+            }
+        }
+        return async { reads.awaitAll().filterNotNull().toMap() }
     }
 
     // endregion
