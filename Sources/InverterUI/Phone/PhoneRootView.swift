@@ -17,14 +17,19 @@ public struct PhoneRootView: View {
     }
 
     public var body: some View {
+        // Until the first reading lands there is nothing to show but a loading screen: no header, no tab bar.
+        let loading = store.snapshot == nil && store.errorMessage == nil && !store.signInRequired
         Group {
             if store.signInRequired && store.snapshot == nil {
                 SignInScreen(store: store).transition(.opacity)
+            } else if loading {
+                LoadingScreen().transition(.opacity)
             } else {
                 tabs.transition(.opacity)
             }
         }
         .animation(.smooth, value: store.signInRequired)
+        .animation(.smooth, value: loading)
         .tint(.solarMark)
         .sheet(isPresented: $showSettings) { SettingsView(store: store) }
         .task {
