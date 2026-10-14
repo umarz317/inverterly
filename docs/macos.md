@@ -100,7 +100,7 @@ The three-dot menu has:
 
 - **Inverter**: when the account has more than one, which inverter the panel and menu bar show. Each keeps its own history.
 - **Illustration**: the animated picture in the panel. Inverter, Flow map or House.
-- **Menu bar shows**: battery percent, load, solar, solar and grid together, or the icon alone. The solar choices show the load, with a house, in place of any figure that has nothing to say: the panels' watts once they make nothing (instead of a moon and 0 W), and the grid's once it is not supplying the house. With neither working, the load shows once.
+- **Menu bar shows**: battery percent, load, solar, dynamic, or the icon alone. Solar is always the panels, a sun that turns to a moon. Dynamic shows solar and grid together and puts the load, with a house, in place of whichever has nothing to say: the panels' watts once they make nothing, and the grid's once it is not supplying the house. With neither working, the load shows once.
 - **Animate menu bar icon**: the icon moves briefly when a new reading arrives. Turn it off for a still icon.
 - **Open at login**
 - **Sign out**
