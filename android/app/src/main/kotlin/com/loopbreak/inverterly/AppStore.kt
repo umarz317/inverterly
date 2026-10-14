@@ -142,6 +142,8 @@ class AppStore(
             if (devices.isEmpty()) viewModelScope.launch { loadDevices() }
             if (panelOpen && today != null) loadToday()
         } catch (e: CancellationException) {
+            // Dropped (another inverter was picked, or the account changed): try again at the next poll, not in a minute.
+            lastAttempt = Instant.EPOCH
             throw e
         } catch (e: Exception) {
             errorMessage = describe(e)

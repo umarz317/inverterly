@@ -383,8 +383,10 @@ class InverterService(
 
     /** Switches the readings to another inverter. What was read for the last one is dropped. */
     override suspend fun selectDevice(id: String) = withContext(dispatcher) {
-        if (id == device?.sn) { chosenSN = id; return@withContext }
+        if (id == device?.sn || id == chosenSN) { chosenSN = id; return@withContext }
         chosenSN = id
+        // Nothing read yet for another inverter means nothing to drop: a reading already on its way is for this choice too.
+        if (device == null) return@withContext
         device = allDevices.firstOrNull { it.sn == id }   // null makes the next fetch look it up again
         snapshotTask?.cancel(); curveTask?.cancel()
         snapshotCache = null; snapshotTask = null; curveCache = null; curveTask = null
