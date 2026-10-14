@@ -5,4 +5,12 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
+
+    <!-- Shown while the app starts: the sun and wave on the logo's navy, then the app's own theme. -->
+    <style name="Theme.Inverterly.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Inverterly</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>
