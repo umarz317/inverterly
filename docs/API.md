@@ -285,19 +285,20 @@ The traps, each of which produced a wrong number at some point:
 - `Timestamp` is the logger's report time. `Date Time` is the inverter's own clock and is often wrong.
 - Energy rows mix units: three are in Wh and the total is in kWh. Read the `unit`.
 - Every value is a string. An empty string means the value is missing, not zero.
-- There is no row for the operating mode on this family, and none for grid power.
+- There is no row for the operating mode on this family, and none for grid power or for power sent to the grid (the export figure is estimated, below).
 
 ## What the app works out itself
 
-Three things are not in the data and are derived:
+Four things are not in the data and are derived:
 
 | Value | How |
 |---|---|
 | Battery power | (charge current − discharge current) × battery voltage. Positive means charging. |
 | Grid power | load + battery power − solar, when grid voltage is present and the battery is not discharging. Otherwise 0. Small results are treated as rounding, because battery current comes in whole amps. |
+| Grid export | Only for a model whose `Machine type` reads "Grid Tie" (not "Off Grid Tie"; no type means no export), with grid voltage present and the panels producing: solar − load − battery power − 5% of solar for conversion loss. Results of 60 W or less are 0. Summed over a day's readings it gives kWh exported. |
 | Mode | Battery if it is discharging, grid if grid power is above zero, solar if the panels are producing, standby if nothing is drawing power. |
 
-Grid power is an estimate. The app labels it that way.
+Grid power and grid export are estimates, because the cloud reports `grid_active_power` as 0 on this family (see the realtime example below) and has no export row at all. The 5% loss is an assumed value, not a measurement, so check export against the meter. The app labels both as estimated.
 
 ## Errors
 

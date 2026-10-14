@@ -100,6 +100,8 @@ private struct DeviceState {
 
     // Eased magnitudes, watts. `gridW` already dies away with `gridFade` in an outage.
     let solarW: Double, gridW: Double, chargeW: Double, dischargeW: Double, loadW: Double
+    /// Estimated power sent to the grid, watts, and its presence: the grid conduit run backwards, in the sun's colour.
+    let exportW: Double, exportOn: Double
     /// 0…1 presence of each flow. A flow that was already running stays at 1 while its power eases; a new
     /// one builds with the 1.1 s ramp and a dying one fades with it, so nothing appears at full strength.
     let solarOn: Double, gridOn: Double, chargeOn: Double, dischargeOn: Double, loadLevel: Double
@@ -130,7 +132,7 @@ private struct DeviceState {
         let flows = frame.flows(at: now)
         let progress = frame.progress(at: now)
         let previous = frame.previous, target = frame.target
-        func any(_ f: EnergyFlows) -> Bool { f.solarW > 1 || f.gridW > 1 || abs(f.batteryW) > 1 || f.loadW > 1 }
+        func any(_ f: EnergyFlows) -> Bool { f.solarW > 1 || f.gridW > 1 || abs(f.batteryW) > 1 || f.loadW > 1 || f.exportW > 1 }
         func presence(_ eased: Double, _ was: Double, _ willBe: Double) -> Double {
             let gate = min(1, max(0, eased / 30))            // the last few watts never pop in or out
             if was > 1, willBe > 1 { return gate }
@@ -159,6 +161,8 @@ private struct DeviceState {
 
         solarOn = presence(flows.solarW, previous.solarW, target.solarW)
         gridOn = presence(flows.gridW, previous.gridW, target.gridW) * gridFade
+        exportW = flows.exportW
+        exportOn = presence(flows.exportW, previous.exportW, target.exportW)
         chargeOn = presence(flows.batteryChargeW, previous.batteryChargeW, target.batteryChargeW)
         dischargeOn = presence(flows.batteryDischargeW, previous.batteryDischargeW, target.batteryDischargeW)
         let load = presence(flows.loadW, previous.loadW, target.loadW)
@@ -575,6 +579,8 @@ private struct DevicePainter {
             e.addFilter(.blur(radius: 0.5))
             conduit(&e, watts: s.solarW, on: s.solarOn, tone: s.solar, seed: 1, from: DeviceGeo.solarFrom, to: DeviceGeo.solarTo)
             conduit(&e, watts: s.gridW, on: s.gridOn, tone: s.grid, seed: 2, from: DeviceGeo.gridFrom, to: DeviceGeo.gridTo)
+            // Power sent to the grid runs the same conduit the other way, in the colour of the panels feeding it.
+            conduit(&e, watts: s.exportW, on: s.exportOn, tone: s.solar, seed: 6, from: DeviceGeo.gridTo, to: DeviceGeo.gridFrom)
             conduit(&e, watts: s.chargeW, on: s.chargeOn, tone: s.battery, seed: 3, from: DeviceGeo.batteryNear, to: DeviceGeo.batteryFar)
             conduit(&e, watts: s.dischargeW, on: s.dischargeOn, tone: s.battery, seed: 4, from: DeviceGeo.batteryFar, to: DeviceGeo.batteryNear)
             conduit(&e, watts: s.loadW, on: s.loadLevel, tone: s.output, seed: 5, from: DeviceGeo.outputFrom, to: DeviceGeo.outputTo)
@@ -591,6 +597,7 @@ private struct DevicePainter {
         }
         chevron(tip: CGPoint(x: DeviceGeo.solarTo.x - 3, y: DeviceGeo.rowTop), right: true, alpha: s.solarOn)
         chevron(tip: CGPoint(x: DeviceGeo.gridTo.x - 3, y: DeviceGeo.rowBottom), right: true, alpha: s.gridOn)
+        chevron(tip: CGPoint(x: DeviceGeo.gridFrom.x + 4, y: DeviceGeo.rowBottom), right: false, alpha: s.exportOn)
         chevron(tip: CGPoint(x: DeviceGeo.batteryFar.x - 2, y: DeviceGeo.rowBottom), right: true, alpha: s.chargeOn)
         chevron(tip: CGPoint(x: DeviceGeo.batteryNear.x + 4, y: DeviceGeo.rowBottom), right: false, alpha: s.dischargeOn)
         chevron(tip: CGPoint(x: DeviceGeo.outputTo.x - 2, y: DeviceGeo.rowTop), right: true, alpha: s.loadLevel)
@@ -635,6 +642,8 @@ private struct DevicePainter {
                 c.draw(Text("No grid").font(.system(size: 10, weight: .semibold)).foregroundStyle(ink.opacity(0.66 * alpha)),
                        at: CGPoint(x: DeviceGeo.left, y: DeviceGeo.labelBottom))
             }
+        } else if flows.exportW > 15 {
+            value("↑ " + PowerFormat.watts(flows.exportW), x: DeviceGeo.left, y: DeviceGeo.labelBottom, alpha: rise(s.exportOn))
         } else if flows.gridW > 1 {
             value(PowerFormat.watts(flows.gridW), x: DeviceGeo.left, y: DeviceGeo.labelBottom, alpha: rise(s.gridOn))
         } else if let volts = snapshot.gridVoltage, volts.isFinite {

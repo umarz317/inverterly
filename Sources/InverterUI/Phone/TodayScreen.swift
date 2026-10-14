@@ -45,12 +45,15 @@ struct TodayScreen: View {
 
 // MARK: - Energy mix
 
-/// A period's share of solar as one large figure and a bar, with the three totals under it.
+/// A period's share of solar as one large figure and a bar, with the totals under it, and the
+/// energy sent to the grid when there was any.
 struct MixSummary: View {
-    let totals: (solarKWh: Double, gridKWh: Double, loadKWh: Double)
+    let totals: (solarKWh: Double, gridKWh: Double, loadKWh: Double, exportKWh: Double)
 
-    private var supplied: Double { totals.solarKWh + totals.gridKWh }
-    private var solarShare: Double { supplied > 0 ? totals.solarKWh / supplied : 0 }
+    /// What went to the grid was made by the panels but did not serve the house, so it is left out of the share.
+    private var usedSolar: Double { max(0, totals.solarKWh - totals.exportKWh) }
+    private var supplied: Double { usedSolar + totals.gridKWh }
+    private var solarShare: Double { supplied > 0 ? usedSolar / supplied : 0 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -63,7 +66,7 @@ struct MixSummary: View {
             GeometryReader { proxy in
                 let width = proxy.size.width
                 HStack(spacing: 2) {
-                    if totals.solarKWh > 0 { Capsule().fill(Color.solarMark).frame(width: max(4, (width - 2) * solarShare)) }
+                    if usedSolar > 0 { Capsule().fill(Color.solarMark).frame(width: max(4, (width - 2) * solarShare)) }
                     if totals.gridKWh > 0 { Capsule().fill(Color.gridMark) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -71,9 +74,10 @@ struct MixSummary: View {
             }
             .frame(height: 6)
             HStack(spacing: 0) {
-                total("Solar", totals.solarKWh, .solarMark)
-                total("Grid", totals.gridKWh, .gridMark)
-                total("Load", totals.loadKWh, nil)
+                total(.solar, totals.solarKWh)
+                total(.grid, totals.gridKWh)
+                total(.load, totals.loadKWh)
+                if totals.exportKWh > 0 { total(.export, totals.exportKWh) }
             }
         }
         .padding(16)
@@ -82,11 +86,11 @@ struct MixSummary: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func total(_ name: String, _ kWh: Double, _ mark: Color?) -> some View {
+    private func total(_ source: EnergySource, _ kWh: Double) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
-                if let mark { Circle().fill(mark).frame(width: 7, height: 7) }
-                Text(name).font(.caption).foregroundStyle(.secondary)
+                SourceIcon(source: source, size: 12)
+                Text(source.name).font(.caption).foregroundStyle(.secondary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(PowerFormat.kWhNumber(kWh)).font(.headline).monospacedDigit()
@@ -162,19 +166,19 @@ private struct PowerChart: View {
                                               : $0.time.formatted(date: .omitted, time: .shortened) } ?? "")
                 .font(.footnote.weight(.medium)).foregroundStyle(.secondary).monospacedDigit()
             HStack(spacing: 0) {
-                value("Solar", shown?.pvW, .solarMark)
-                value("Grid", shown?.gridW, .gridMark)
-                value("Load", shown?.loadW, .primary)
+                value(.solar, shown?.pvW)
+                value(.grid, shown?.gridW)
+                value(.load, shown?.loadW)
             }
         }
         .animation(nil, value: selection)
     }
 
-    private func value(_ name: String, _ watts: Double?, _ mark: Color) -> some View {
+    private func value(_ source: EnergySource, _ watts: Double?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
-                Capsule().fill(mark).frame(width: 12, height: 3)
-                Text(name).font(.caption).foregroundStyle(.secondary)
+                SourceIcon(source: source, size: 12)
+                Text(source.name).font(.caption).foregroundStyle(.secondary)
             }
             Text(watts.map(PowerFormat.watts) ?? "–").font(.headline).monospacedDigit()
         }

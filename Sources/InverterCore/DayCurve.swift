@@ -10,11 +10,14 @@ public struct DayCurvePoint: Sendable, Equatable, Identifiable {
     /// Estimated grid draw, watts, worked out like `EnergySnapshot.gridPowerW`.
     public var gridW: Double
     public var batteryPercent: Double?
+    /// Estimated power sent to the grid, watts, worked out like `EnergySnapshot.exportPowerW`.
+    public var exportW: Double
 
     public var id: Date { time }
 
-    public init(time: Date, pvW: Double, loadW: Double, gridW: Double = 0, batteryPercent: Double? = nil) {
+    public init(time: Date, pvW: Double, loadW: Double, gridW: Double = 0, batteryPercent: Double? = nil, exportW: Double = 0) {
         self.time = time; self.pvW = pvW; self.loadW = loadW; self.gridW = gridW; self.batteryPercent = batteryPercent
+        self.exportW = exportW
     }
 }
 
@@ -40,8 +43,8 @@ public struct DayCurve: Sendable, Equatable {
 
     /// Energy so far today, in kWh, added up the same way as `SnapshotParser.dayTotals`: each reading
     /// counts until the next one, at most ten minutes, and the last one until `now`, at most five.
-    public func totals(now: Date = Date()) -> (solarKWh: Double, gridKWh: Double, loadKWh: Double) {
-        var solar = 0.0, grid = 0.0, load = 0.0
+    public func totals(now: Date = Date()) -> (solarKWh: Double, gridKWh: Double, loadKWh: Double, exportKWh: Double) {
+        var solar = 0.0, grid = 0.0, load = 0.0, export = 0.0
         for (index, point) in points.enumerated() {
             let seconds = index + 1 < points.count
                 ? min(points[index + 1].time.timeIntervalSince(point.time), 600)
@@ -50,8 +53,9 @@ public struct DayCurve: Sendable, Equatable {
             solar += max(0, point.pvW) * hours
             grid += point.gridW * hours
             load += max(0, point.loadW) * hours
+            export += point.exportW * hours
         }
-        return (solar / 1000, grid / 1000, load / 1000)
+        return (solar / 1000, grid / 1000, load / 1000, export / 1000)
     }
 
     /// Position of a moment along the day, 0 at midnight and 1 at the next midnight.
