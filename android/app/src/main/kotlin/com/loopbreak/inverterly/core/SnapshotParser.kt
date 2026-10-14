@@ -284,7 +284,7 @@ object SnapshotParser {
      */
     fun dayCurve(dat: JsonElement?, day: String, timeZone: ZoneId, fetchedAt: Instant = Instant.now()): DayCurve {
         val dayStart = parseTimestamp("$day 00:00:00", timeZone)
-            ?: LocalDate.ofInstant(fetchedAt, timeZone).atStartOfDay(timeZone).toInstant()
+            ?: fetchedAt.atZone(timeZone).toLocalDate().atStartOfDay(timeZone).toInstant()
         val empty = DayCurve(day, dayStart, emptyList(), fetchedAt)
 
         val reports = dat["row"].array ?: emptyList()
@@ -348,7 +348,7 @@ object SnapshotParser {
     // region Time
 
     /** The plant's calendar day containing [date], as the API wants it: "2026-10-13". */
-    fun dayString(date: Instant, zone: ZoneId): String = LocalDate.ofInstant(date, zone).toString()
+    fun dayString(date: Instant, zone: ZoneId): String = date.atZone(zone).toLocalDate().toString()
 
     /** Parses the cloud's "2026-10-13 17:22:30" (a "T" separator and fractional seconds are tolerated). */
     fun parseTimestamp(text: String, zone: ZoneId): Instant? {
