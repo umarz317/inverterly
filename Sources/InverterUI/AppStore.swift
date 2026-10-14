@@ -27,22 +27,31 @@ public enum MenuBarMetric: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// What the menu bar shows for a reading: one symbol and number per value, following the
-    /// reading (the battery at its level with a bolt while charging, a sun for solar that turns to a
-    /// moon when the panels make nothing). Empty for the icon alone.
+    /// reading (the battery at its level with a bolt while charging). The two solar choices show the
+    /// load, with a house, in place of any figure that has nothing to say: the panels' watts once they
+    /// make nothing, and the grid's once it is not supplying the house, rather than a moon and "0 W"
+    /// or a plug and "0 W". When neither is working the load is shown once. Empty for the icon alone.
     public func segments(for reading: EnergySnapshot) -> [(symbol: String, text: String)] {
-        let solar = (Self.solarSymbol(reading), PowerFormat.watts(reading.pvPowerW))
+        let load = ("house", PowerFormat.watts(reading.loadPowerW))
+        let producing = reading.pvPowerW > Self.solarFloorW, drawing = reading.gridPowerW > 0
+        let solar = producing ? (Self.solarSymbol(reading), PowerFormat.watts(reading.pvPowerW)) : load
         switch self {
         case .battery:
             guard let percent = reading.batteryPercent else { return [] }
             return [(reading.batteryPowerW > 30 ? "battery.100percent.bolt" : Self.batterySymbol(percent), "\(Int(percent.rounded()))%")]
-        case .load: return [("house", PowerFormat.watts(reading.loadPowerW))]
+        case .load: return [load]
         case .solar: return [solar]
-        case .solarAndGrid: return [solar, (Self.gridSymbol(reading), PowerFormat.watts(reading.gridPowerW))]
+        case .solarAndGrid:
+            if !producing && !drawing { return [load] }
+            return [solar, drawing ? (Self.gridSymbol(reading), PowerFormat.watts(reading.gridPowerW)) : load]
         case .none: return []
         }
     }
 
-    public static func solarSymbol(_ reading: EnergySnapshot) -> String { reading.pvPowerW > 20 ? "sun.max" : "moon" }
+    /// Below this many watts the panels count as making nothing: the sun gives way to a moon, and the menu bar to the load.
+    static let solarFloorW = 20.0
+
+    public static func solarSymbol(_ reading: EnergySnapshot) -> String { reading.pvPowerW > solarFloorW ? "sun.max" : "moon" }
     public static func gridSymbol(_ reading: EnergySnapshot) -> String { reading.gridPresent ? "powerplug" : "bolt.slash" }
 
     public static func batterySymbol(_ percent: Double?) -> String {
