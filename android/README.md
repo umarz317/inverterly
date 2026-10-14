@@ -56,3 +56,7 @@ Settings has a **Raw readings** row for troubleshooting. It asks the cloud for e
 An inverter that reports itself as a "Grid Tie" can send surplus power to the grid, but the cloud has no export reading for it (its grid power is always 0). So the app estimates it: the power the panels make beyond the load and the battery's charging, less about 5% for conversion losses, and only with grid voltage present. A small surplus is treated as measurement error. Summed over the logger's 5-minute readings it gives kWh exported per day and month.
 
 It shows as an "Exporting" Grid tile and a reversed grid flow on Now, an Export total on Today and History, and an Export column in the History list. Models that report "Off Grid Tie", or no type at all, never show export. It is an estimate: check it against your meter before relying on it for billing. The iOS app does not estimate export yet.
+
+## Install the APK
+
+Each Android release on the [Releases page](https://github.com/umarz317/inverterly/releases) has a signed `Inverterly-<version>.apk`. Open it on the phone and allow installs from that source when Android asks. Play Protect may say the app was not scanned or comes from an unknown developer, because it is not on the Play Store; "Install anyway" continues. A newer version installs over an older one and keeps the login. It needs Android 8.0 or later.

@@ -1,6 +1,6 @@
 # Inverterly for Android and iOS
 
-> **Fork notice:** Inverterly is a personal fork of [InverterBar](https://github.com/ahkamboh/inverterbar) by Ali Hamza Kamboh, tailored for my own use. This branch adds an Android app and an iOS app. Neither is on a store and neither has a public release or download: you build them onto your own device, the iOS one with Xcode and the Android one with Gradle. This fork is not affiliated with or supported by the original author; please report issues with it here, not upstream.
+> **Fork notice:** Inverterly is a personal fork of [InverterBar](https://github.com/ahkamboh/inverterbar) by Ali Hamza Kamboh, tailored for my own use. This branch adds an Android app and an iOS app. Neither is on a store. The iOS app you build onto your own device with Xcode. For Android there is a signed APK on the [Releases page](https://github.com/umarz317/inverterly/releases) to install directly (Android shows an "unknown source" prompt because it is not from the Play Store), or you can build it with Gradle. This fork is not affiliated with or supported by the original author; please report issues with it here, not upstream.
 
 An Android app (Android 8 or later) and an iOS app (iOS 17 or later) that show a Voltronic-type solar inverter live: what the panels are making, what the house is drawing, where the battery stands, and whether the grid is up.
 
