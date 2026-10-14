@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -77,7 +78,11 @@ private val DarkColors = darkColorScheme(
 fun InverterlyTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
     androidx.compose.runtime.CompositionLocalProvider(LocalMarks provides if (dark) DarkMarks else LightMarks) {
-        MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, content = content)
+        val colors = if (dark) DarkColors else LightColors
+        MaterialTheme(colorScheme = colors) {
+            // Text outside a Surface takes its colour from here; without it the default is black, which vanishes on dark pages.
+            Surface(Modifier.fillMaxSize(), color = colors.background, contentColor = colors.onBackground, content = content)
+        }
     }
 }
 

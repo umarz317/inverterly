@@ -4,6 +4,8 @@
         <item name="android:windowBackground">@color/background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- The app has its own light and dark colours; phone-wide "force dark" would invert them a second time. -->
+        <item name="android:forceDarkAllowed">false</item>
     </style>
 
     <!-- Shown while the app starts: the sun and wave on the logo's navy, then the app's own theme. -->
