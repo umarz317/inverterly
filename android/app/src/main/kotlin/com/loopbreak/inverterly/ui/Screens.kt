@@ -108,7 +108,26 @@ private enum class PhoneTab(val title: String, val icon: ImageVector) {
 @Composable
 fun InverterlyApp(store: AppStore) {
     InverterlyTheme {
-        if (store.signInRequired && store.snapshot == null) SignInScreen(store) else Tabs(store)
+        // Until the first reading lands there is nothing to show but a loading screen: no header, no tab bar.
+        val loading = store.snapshot == null && store.errorMessage == null && !store.signInRequired
+        LightBars(!loading)
+        if (store.signInRequired && store.snapshot == null) SignInScreen(store)
+        else if (loading) LoadingScreen()
+        else Tabs(store)
+    }
+}
+
+/** Dark status and navigation bar icons on the app's light pages; light ones on the dark loading screen. */
+@Composable
+private fun LightBars(followTheme: Boolean) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    androidx.compose.runtime.SideEffect {
+        val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+        val controller = androidx.core.view.WindowCompat.getInsetsController(window, view)
+        val darkIcons = followTheme && !dark
+        controller.isAppearanceLightStatusBars = darkIcons
+        controller.isAppearanceLightNavigationBars = darkIcons
     }
 }
 
@@ -265,8 +284,6 @@ private fun NowScreen(store: AppStore) {
             Details(snapshot, store)
         } else if (store.errorMessage != null) {
             FailedView(store.errorMessage.orEmpty())
-        } else {
-            ReadingView()
         }
     }
 }
@@ -411,19 +428,6 @@ private fun Details(snapshot: EnergySnapshot, store: AppStore) {
                 }
             }
         }
-    }
-}
-
-/** Until the first reading: a spinner and one line, centred in the space below the header. */
-@Composable
-private fun ReadingView() {
-    Column(
-        Modifier.fillMaxWidth().padding(top = 120.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        CircularProgressIndicator(color = marks.solar, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
-        Text("Reading your inverter…", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
