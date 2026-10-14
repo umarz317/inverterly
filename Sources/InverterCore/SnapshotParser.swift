@@ -364,6 +364,7 @@ public enum SnapshotParser {
         let batteryColumn = column("battery capacity")
         let voltageColumn = column("battery voltage"), chargeColumn = column("battery charging current")
         let dischargeColumn = column("battery discharging current"), gridColumn = column("grid voltage")
+        let typeColumn = column("machine type")
 
         var byTime: [Date: DayCurvePoint] = [:]
         for report in reports {
@@ -377,9 +378,11 @@ public enum SnapshotParser {
             let reading = EnergySnapshot(
                 pvPowerW: (number(pv1Column) ?? 0) + (number(pv2Column) ?? 0), loadPowerW: number(loadColumn) ?? 0,
                 batteryVoltage: number(voltageColumn), batteryChargeA: number(chargeColumn) ?? 0,
-                batteryDischargeA: number(dischargeColumn) ?? 0, gridVoltage: number(gridColumn))
+                batteryDischargeA: number(dischargeColumn) ?? 0, gridVoltage: number(gridColumn),
+                machineType: typeColumn.flatMap { fields.indices.contains($0) ? fields[$0].stringValue : nil })
             byTime[time] = DayCurvePoint(time: time, pvW: reading.pvPowerW, loadW: reading.loadPowerW,
-                                         gridW: reading.gridPowerW, batteryPercent: number(batteryColumn))
+                                         gridW: reading.gridPowerW, batteryPercent: number(batteryColumn),
+                                         exportW: reading.exportPowerW)
         }
         curve.points = byTime.values.sorted { $0.time < $1.time }
         return curve
@@ -402,7 +405,8 @@ public enum SnapshotParser {
         let curve = try dayCurve(dat, day: day, timeZone: timeZone, fetchedAt: now)
         guard let last = curve.points.last else { return nil }
         let sum = curve.totals(now: complete ? last.time.addingTimeInterval(300) : now)
-        return DayTotals(day: day, solarKWh: sum.solarKWh, gridKWh: sum.gridKWh, loadKWh: sum.loadKWh, complete: complete)
+        return DayTotals(day: day, solarKWh: sum.solarKWh, gridKWh: sum.gridKWh, loadKWh: sum.loadKWh, complete: complete,
+                         exportKWh: sum.exportKWh)
     }
 
     // MARK: Time

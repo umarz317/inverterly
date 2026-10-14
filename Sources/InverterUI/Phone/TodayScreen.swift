@@ -45,12 +45,15 @@ struct TodayScreen: View {
 
 // MARK: - Energy mix
 
-/// A period's share of solar as one large figure and a bar, with the three totals under it.
+/// A period's share of solar as one large figure and a bar, with the totals under it, and the
+/// energy sent to the grid when there was any.
 struct MixSummary: View {
-    let totals: (solarKWh: Double, gridKWh: Double, loadKWh: Double)
+    let totals: (solarKWh: Double, gridKWh: Double, loadKWh: Double, exportKWh: Double)
 
-    private var supplied: Double { totals.solarKWh + totals.gridKWh }
-    private var solarShare: Double { supplied > 0 ? totals.solarKWh / supplied : 0 }
+    /// What went to the grid was made by the panels but did not serve the house, so it is left out of the share.
+    private var usedSolar: Double { max(0, totals.solarKWh - totals.exportKWh) }
+    private var supplied: Double { usedSolar + totals.gridKWh }
+    private var solarShare: Double { supplied > 0 ? usedSolar / supplied : 0 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -63,7 +66,7 @@ struct MixSummary: View {
             GeometryReader { proxy in
                 let width = proxy.size.width
                 HStack(spacing: 2) {
-                    if totals.solarKWh > 0 { Capsule().fill(Color.solarMark).frame(width: max(4, (width - 2) * solarShare)) }
+                    if usedSolar > 0 { Capsule().fill(Color.solarMark).frame(width: max(4, (width - 2) * solarShare)) }
                     if totals.gridKWh > 0 { Capsule().fill(Color.gridMark) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -74,6 +77,7 @@ struct MixSummary: View {
                 total(.solar, totals.solarKWh)
                 total(.grid, totals.gridKWh)
                 total(.load, totals.loadKWh)
+                if totals.exportKWh > 0 { total(.export, totals.exportKWh) }
             }
         }
         .padding(16)

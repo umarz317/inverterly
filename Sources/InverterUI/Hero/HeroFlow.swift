@@ -162,7 +162,7 @@ struct HeroFlow: View {
     /// from the feed can neither reach a label nor poison the drawing.
     private static func clean(_ f: EnergyFlows) -> EnergyFlows {
         EnergyFlows(solarW: max(0, finite(f.solarW)), gridW: max(0, finite(f.gridW)),
-                    batteryW: finite(f.batteryW), loadW: max(0, finite(f.loadW)))
+                    batteryW: finite(f.batteryW), loadW: max(0, finite(f.loadW)), exportW: max(0, finite(f.exportW)))
     }
 
     /// `HeroMath.intensity` with a soft start, so a few stray watts draw a faint comet, not one at its 0.12 floor.
@@ -329,7 +329,12 @@ struct HeroFlow: View {
         // How far the outage look has set in. It follows the ramp only when the grid was carrying power a moment ago.
         let cut = outage ? (gridWas > 0.004 ? progress : 1) : 0
         let solarLevel = eased(solarWas, Self.level(after.solarW))
-        let gridLevel = eased(gridWas, Self.level(after.gridW)) * (1 - cut)     // a dead line empties ahead of its label
+        let importLevel = eased(gridWas, Self.level(after.gridW)) * (1 - cut)   // a dead line empties ahead of its label
+        // Power sent to the grid runs the same conduit the other way, so the line carries whichever is larger.
+        let exportWas = Self.level(before.exportW)
+        let exportLevel = eased(exportWas, Self.level(after.exportW))
+        let exporting = exportLevel > importLevel
+        let gridLevel = max(importLevel, exportLevel)
         let homeFlow = eased(homeWas, Self.level(after.loadW))
 
         // The battery is signed. Without a battery voltage the feed gives current but no watts: then the
@@ -375,7 +380,7 @@ struct HeroFlow: View {
         }
         func arrival(_ front: Double) -> Double { Self.smooth(0.55, 1, front) }     // the pulse lands at about 0.76
         let sunFront = front(from: 0, was: solarWas)
-        let gridFront = front(from: 0, was: gridWas)
+        let gridFront = front(from: 0, was: max(gridWas, exportWas))
         let homeFront = front(from: sinkStart, was: homeWas)
         let battFront = front(from: charging ? max(battStart, sinkStart) : battStart, was: battWas)
         // A sink lights when its first comet lands.
@@ -417,8 +422,11 @@ struct HeroFlow: View {
         comets.reserveCapacity((Metric.slots + 1) * 4)
         addComets(&comets, on: sunTrack, towardHub: true, strength: solarLevel, settled: Self.level(after.solarW), front: sunFront,
                   travel: travel(from: before.solarW, to: after.solarW), vigor: vigor) { _ in tones.solar }
-        addComets(&comets, on: gridTrack, towardHub: true, strength: gridLevel, settled: Self.level(after.gridW), front: gridFront,
-                  travel: travel(from: before.gridW, to: after.gridW) + 0.37, vigor: vigor) { _ in tones.grid }
+        // Imported power flows in from the grid in the grid's colour; exported power leaves the hub in the colour of what feeds it.
+        addComets(&comets, on: gridTrack, towardHub: !exporting, strength: gridLevel,
+                  settled: max(Self.level(after.gridW), Self.level(after.exportW)), front: gridFront,
+                  travel: travel(from: max(before.gridW, before.exportW), to: max(after.gridW, after.exportW)) + 0.37,
+                  vigor: vigor) { slot in exporting ? feed(slot, battery: true) : tones.grid }
         addComets(&comets, on: battTrack, towardHub: !charging, strength: battFlow, settled: abs(battTo), front: battFront,
                   travel: travel(from: abs(before.batteryW), to: abs(after.batteryW)) + 0.61, vigor: vigor) { slot in
             charging ? feed(slot, battery: false) : battTone
@@ -525,7 +533,7 @@ struct HeroFlow: View {
                     fraction: percent.map { $0 / 100 }, low: low, tone: tones.alert)
 
         // 5. Hub. It wakes when power reaches it, from a source or (if the feed shows none) for the load.
-        let through = max(solarLevel * arrival(sunFront), gridLevel * arrival(gridFront),
+        let through = max(solarLevel * arrival(sunFront), importLevel * arrival(gridFront),
                           charging ? 0 : battFlow * arrival(battFront), homeLevel)
         drawHub(&canvas, rect: hub, activity: live ? through * vigor : 0, live: live, time: time, dark: dark,
                 ports: [(sunTrack.p3, solarOn), (gridTrack.p3, gridOn), (homeTrack.p3, homeOn), (battTrack.p3, battOn)])
@@ -554,9 +562,12 @@ struct HeroFlow: View {
 
         // Grid: its watts, or "Outage" once the line is gone. The two never overlap: one leaves, then the other arrives.
         let leaving = 1 - Self.smooth(0, 0.5, cut), arriving = Self.smooth(0.5, 1, cut)
-        if leaving > 0.01 { canvas.draw(reading(PowerFormat.watts(gridW), gridOn, fade: leaving), at: valuePoint(gridC), anchor: .center) }
+        // While power is being sent to the grid, the label is the export, with an arrow out.
+        let sending = flows.exportW > 15
+        let gridText = sending ? "↑ " + PowerFormat.watts(flows.exportW) : PowerFormat.watts(gridW)
+        if leaving > 0.01 { canvas.draw(reading(gridText, gridOn, fade: leaving), at: valuePoint(gridC), anchor: .center) }
         if arriving > 0.01 { canvas.draw(value("Outage", arriving, tones.alert.text), at: valuePoint(gridC), anchor: .center) }
-        canvas.draw(caption("Grid", quiet + 0.12 * gridOn), at: captionPoint(gridC), anchor: .center)
+        canvas.draw(caption(sending ? "Export" : "Grid", quiet + 0.12 * gridOn), at: captionPoint(gridC), anchor: .center)
 
         // Battery: watts (or amps when that is all the feed gives), then charge and what it is doing.
         let filling = blind ? amps > 0 : battW > 15, draining = blind ? amps < 0 : battW < -15

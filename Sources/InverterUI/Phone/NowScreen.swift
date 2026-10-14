@@ -89,9 +89,11 @@ struct NowScreen: View {
             }
             GridRow {
                 Reading(symbol: MenuBarMetric.gridSymbol(snapshot), tint: snapshot.gridPresent ? .gridMark : .alertAccent, caption: "Grid",
-                        value: snapshot.gridPresent ? (snapshot.gridPowerW > 0 ? PowerFormat.watts(snapshot.gridPowerW) : "Standby") : "Outage",
-                        detail: snapshot.gridPresent ? String(format: "%.0f V", snapshot.gridVoltage ?? 0) : "No supply",
-                        quiet: snapshot.gridPresent && snapshot.gridPowerW < 1)
+                        value: !snapshot.gridPresent ? "Outage" : snapshot.exportPowerW > 0 ? PowerFormat.watts(snapshot.exportPowerW)
+                            : snapshot.gridPowerW > 0 ? PowerFormat.watts(snapshot.gridPowerW) : "Standby",
+                        detail: !snapshot.gridPresent ? "No supply" : snapshot.exportPowerW > 0 ? "Exporting (est.)"
+                            : String(format: "%.0f V", snapshot.gridVoltage ?? 0),
+                        quiet: snapshot.gridPresent && snapshot.gridPowerW < 1 && snapshot.exportPowerW < 1)
                 Reading(symbol: "house", tint: .secondary, caption: "Output",
                         value: snapshot.outputVoltage.map { String(format: "%.0f V", $0) } ?? "–",
                         detail: snapshot.outputHz.map { String(format: "%.1f Hz", $0) } ?? "–")

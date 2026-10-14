@@ -5,13 +5,14 @@ import SwiftUI
 /// the sun is orange, the grid's plug blue, the house (load) in the text colour. The charts keep
 /// their own orange and grey; only the icons carry the extra colour.
 enum EnergySource {
-    case solar, grid, load
+    case solar, grid, load, export
 
     var symbol: String {
         switch self {
         case .solar: "sun.max.fill"
         case .grid: "powerplug.fill"
         case .load: "house.fill"
+        case .export: "arrow.up.right.circle.fill"
         }
     }
 
@@ -20,6 +21,7 @@ enum EnergySource {
         case .solar: .solarMark
         case .grid: .blue
         case .load: .primary
+        case .export: .green
         }
     }
 
@@ -28,6 +30,7 @@ enum EnergySource {
         case .solar: "Solar"
         case .grid: "Grid"
         case .load: "Load"
+        case .export: "Export"
         }
     }
 }

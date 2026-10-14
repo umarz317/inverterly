@@ -276,7 +276,8 @@ private struct ScenePainter {
 
     private static func finite(_ flows: EnergyFlows) -> EnergyFlows {
         func clean(_ value: Double) -> Double { value.isFinite ? value : 0 }
-        return EnergyFlows(solarW: clean(flows.solarW), gridW: clean(flows.gridW), batteryW: clean(flows.batteryW), loadW: clean(flows.loadW))
+        return EnergyFlows(solarW: clean(flows.solarW), gridW: clean(flows.gridW), batteryW: clean(flows.batteryW), loadW: clean(flows.loadW),
+                           exportW: clean(flows.exportW))
     }
 
     private static func clamp(_ x: Double) -> Double { min(1, max(0, x)) }
@@ -782,7 +783,10 @@ private struct ScenePainter {
         caption(&ctx, x: Self.captionX.home, name: "Home", value: watts(flows.loadW, known: loadKnown), lit: flows.loadW >= 0.5)
         let batteryName = flows.batteryW > 8 ? "Charging" : flows.batteryW < -8 ? "Discharging" : "Battery"
         caption(&ctx, x: Self.captionX.battery, name: batteryName, value: watts(flows.batteryW, known: batteryKnown), lit: abs(flows.batteryW) >= 0.5)
-        if snapshot.gridPresent {
+        if snapshot.gridPresent, flows.exportW > 15 {
+            // Sent to the grid: the wire is not drawn backwards here, but the caption says what is happening.
+            caption(&ctx, x: Self.captionX.grid, name: "Export", value: "↑ " + PowerFormat.watts(flows.exportW), lit: true)
+        } else if snapshot.gridPresent {
             caption(&ctx, x: Self.captionX.grid, name: "Grid", value: watts(flows.gridW, known: solarKnown && loadKnown && batteryKnown), lit: flows.gridW >= 0.5)
         } else {
             caption(&ctx, x: Self.captionX.grid, name: "Grid", value: "Outage", lit: true, tint: alertColor)

@@ -10,11 +10,15 @@ public struct DayTotals: Codable, Sendable, Equatable, Identifiable {
     public var loadKWh: Double
     /// False for a day that was still going when it was read; those are read again.
     public var complete: Bool
+    /// Estimated energy sent to the grid (see `EnergySnapshot.exportPowerW`). Zero on a model that
+    /// cannot export. Nil only in entries saved before it was estimated, which are read again.
+    public var exportKWh: Double?
 
     public var id: String { day }
 
-    public init(day: String, solarKWh: Double, gridKWh: Double, loadKWh: Double, complete: Bool) {
+    public init(day: String, solarKWh: Double, gridKWh: Double, loadKWh: Double, complete: Bool, exportKWh: Double? = 0) {
         self.day = day; self.solarKWh = solarKWh; self.gridKWh = gridKWh; self.loadKWh = loadKWh; self.complete = complete
+        self.exportKWh = exportKWh
     }
 }
 
@@ -26,6 +30,7 @@ public struct MonthTotals: Sendable, Equatable, Identifiable {
     public var solarKWh: Double
     public var gridKWh: Double
     public var loadKWh: Double
+    public var exportKWh: Double
 
     public var id: String { month }
 
@@ -34,9 +39,10 @@ public struct MonthTotals: Sendable, Equatable, Identifiable {
         var byMonth: [String: MonthTotals] = [:]
         for day in days {
             let month = String(day.day.prefix(7))
-            var total = byMonth[month] ?? MonthTotals(month: month, days: 0, solarKWh: 0, gridKWh: 0, loadKWh: 0)
+            var total = byMonth[month] ?? MonthTotals(month: month, days: 0, solarKWh: 0, gridKWh: 0, loadKWh: 0, exportKWh: 0)
             total.days += 1
             total.solarKWh += day.solarKWh; total.gridKWh += day.gridKWh; total.loadKWh += day.loadKWh
+            total.exportKWh += day.exportKWh ?? 0
             byMonth[month] = total
         }
         return byMonth.values.sorted { $0.month > $1.month }
@@ -59,7 +65,8 @@ public struct HistoryStore: Sendable {
         guard let fileURL, let data = FileManager.default.contents(atPath: fileURL.path) else { return [:] }
         // Keys are "<inverter serial>/<day>". Entries from before there was more than one inverter have no serial.
         let all = (try? JSONDecoder().decode([String: DayTotals].self, from: data)) ?? [:]
-        return all.filter { $0.key.contains("/") }
+        // Days saved before export was estimated have no figure; dropping them reads those days once more.
+        return all.filter { $0.key.contains("/") && $0.value.exportKWh != nil }
     }
 
     func save(_ days: [String: DayTotals]) {
