@@ -71,9 +71,9 @@ struct MixSummary: View {
             }
             .frame(height: 6)
             HStack(spacing: 0) {
-                total("Solar", totals.solarKWh, .solarMark)
-                total("Grid", totals.gridKWh, .gridMark)
-                total("Load", totals.loadKWh, nil)
+                total(.solar, totals.solarKWh)
+                total(.grid, totals.gridKWh)
+                total(.load, totals.loadKWh)
             }
         }
         .padding(16)
@@ -82,11 +82,11 @@ struct MixSummary: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func total(_ name: String, _ kWh: Double, _ mark: Color?) -> some View {
+    private func total(_ source: EnergySource, _ kWh: Double) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
-                if let mark { Circle().fill(mark).frame(width: 7, height: 7) }
-                Text(name).font(.caption).foregroundStyle(.secondary)
+                SourceIcon(source: source, size: 12)
+                Text(source.name).font(.caption).foregroundStyle(.secondary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(PowerFormat.kWhNumber(kWh)).font(.headline).monospacedDigit()
@@ -162,19 +162,19 @@ private struct PowerChart: View {
                                               : $0.time.formatted(date: .omitted, time: .shortened) } ?? "")
                 .font(.footnote.weight(.medium)).foregroundStyle(.secondary).monospacedDigit()
             HStack(spacing: 0) {
-                value("Solar", shown?.pvW, .solarMark)
-                value("Grid", shown?.gridW, .gridMark)
-                value("Load", shown?.loadW, .primary)
+                value(.solar, shown?.pvW)
+                value(.grid, shown?.gridW)
+                value(.load, shown?.loadW)
             }
         }
         .animation(nil, value: selection)
     }
 
-    private func value(_ name: String, _ watts: Double?, _ mark: Color) -> some View {
+    private func value(_ source: EnergySource, _ watts: Double?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
-                Capsule().fill(mark).frame(width: 12, height: 3)
-                Text(name).font(.caption).foregroundStyle(.secondary)
+                SourceIcon(source: source, size: 12)
+                Text(source.name).font(.caption).foregroundStyle(.secondary)
             }
             Text(watts.map(PowerFormat.watts) ?? "–").font(.headline).monospacedDigit()
         }
