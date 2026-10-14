@@ -371,7 +371,7 @@ class AppStore(
 
     // endregion
 
-    class Factory(private val application: Application, private val demo: Boolean) : ViewModelProvider.Factory {
+    class Factory(private val application: Application, private val demo: Boolean, private val slow: Boolean = false) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val account = AccountStore(application)
@@ -379,7 +379,7 @@ class AppStore(
             val sessions = SessionStore(File(dir, "session.json"))
             val history = HistoryStore(File(dir, "history.json"))
             val provider: SnapshotProviding =
-                if (demo) DemoProvider() else InverterService(account::load, sessions, history)
+                if (demo) DemoProvider(slow) else InverterService(account::load, sessions, history)
             return AppStore(application, provider, account, history, sessions) as T
         }
     }

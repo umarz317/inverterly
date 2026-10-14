@@ -15,7 +15,8 @@ import com.loopbreak.inverterly.ui.InverterlyApp
 class MainActivity : ComponentActivity() {
     // `adb shell am start -n com.loopbreak.inverterly/.MainActivity --ez demo true` shows made-up readings (debug builds only).
     private val store: AppStore by viewModels {
-        AppStore.Factory(application, demo = BuildConfig.DEBUG && intent.getBooleanExtra("demo", false))
+        AppStore.Factory(application, demo = BuildConfig.DEBUG && intent.getBooleanExtra("demo", false),
+            slow = intent.getBooleanExtra("slow", false))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -15,8 +15,14 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /** Made-up readings for a sunny afternoon, for working on the layout without an account (debug builds only). */
-class DemoProvider : SnapshotProviding {
-    override suspend fun fetchSnapshot(force: Boolean) = EnergySnapshot(
+class DemoProvider(private val slow: Boolean = false) : SnapshotProviding {
+    override suspend fun fetchSnapshot(force: Boolean): EnergySnapshot {
+        // `--ez slow true` holds the reading back, to look at the loading screen.
+        if (slow) kotlinx.coroutines.delay(20_000)
+        return reading()
+    }
+
+    private fun reading() = EnergySnapshot(
         deviceTime = Instant.now().minusSeconds(90),
         pvPowerW = 3420.0, pvVoltage = 312.0,
         loadPowerW = 1180.0, loadApparentVA = 1290.0, loadPercent = 20.0,

@@ -414,32 +414,16 @@ private fun Details(snapshot: EnergySnapshot, store: AppStore) {
     }
 }
 
-/** Until the first reading: what is happening, and the tiles' places held so the screen does not jump when the numbers land. */
+/** Until the first reading: a spinner and one line, centred in the space below the header. */
 @Composable
 private fun ReadingView() {
-    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        PhoneCard {
-            Column(Modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                CircularProgressIndicator(color = marks.solar, modifier = Modifier.size(36.dp))
-                Text("Reading your inverter", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("Getting the latest numbers from the inverter cloud. This takes a few seconds.",
-                    style = MaterialTheme.typography.bodyMedium, color = secondary, textAlign = TextAlign.Center)
-            }
-        }
-        for (row in 0 until 2) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                for (col in 0 until 2) {
-                    PhoneCard(Modifier.weight(1f)) {
-                        val placeholder = secondary.copy(alpha = 0.18f)
-                        Box(Modifier.size(30.dp).background(placeholder, CircleShape))
-                        Box(Modifier.size(90.dp, 22.dp).background(placeholder, RoundedCornerShape(6.dp)))
-                        Box(Modifier.size(60.dp, 12.dp).background(placeholder, RoundedCornerShape(4.dp)))
-                    }
-                }
-            }
-        }
+    Column(
+        Modifier.fillMaxWidth().padding(top = 120.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        CircularProgressIndicator(color = marks.solar, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
+        Text("Reading your inverter…", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
