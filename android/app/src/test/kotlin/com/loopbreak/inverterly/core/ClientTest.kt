@@ -88,8 +88,8 @@ class ClientTest {
         }
     }
 
-    @Test fun theAllowListIsExactlyTheSevenQueries() {
+    @Test fun theAllowListIsExactlyTheEightQueries() {
         assertEquals(setOf("webQueryDeviceEs", "queryDevices", "queryDeviceLastData", "queryDeviceWarning", "queryPlants",
-            "webQueryCollectorsEs", "queryDeviceDataOneDay"), DessReadOnly.actions)
+            "webQueryCollectorsEs", "queryDeviceDataOneDay", "webQueryDeviceEnergyFlowEs"), DessReadOnly.actions)
     }
 }

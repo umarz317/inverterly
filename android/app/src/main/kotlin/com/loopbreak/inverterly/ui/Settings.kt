@@ -52,6 +52,7 @@ fun SettingsSheet(store: AppStore, onDismiss: () -> Unit) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     val scope = rememberCoroutineScope()
     var confirmSignOut by remember { mutableStateOf(false) }
+    var showRaw by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.background) {
@@ -122,6 +123,13 @@ fun SettingsSheet(store: AppStore, onDismiss: () -> Unit) {
             }
 
             PhoneCard(padding = false) {
+                Row(Modifier.fillMaxWidth().clickable { showRaw = true }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Raw readings", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    Text("For troubleshooting", color = secondary, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            PhoneCard(padding = false) {
                 Box(Modifier.fillMaxWidth().clickable { confirmSignOut = true }.padding(16.dp), contentAlignment = Alignment.Center) {
                     Text("Sign Out", color = tones.alert, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                 }
@@ -129,6 +137,8 @@ fun SettingsSheet(store: AppStore, onDismiss: () -> Unit) {
             Spacer(Modifier.height(8.dp))
         }
     }
+
+    if (showRaw) RawReadingsDialog(store) { showRaw = false }
 
     if (confirmSignOut) {
         AlertDialog(

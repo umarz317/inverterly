@@ -46,3 +46,7 @@ adb shell am start -n com.loopbreak.inverterly/.MainActivity --ez demo true
 Use the username and password from your inverter's monitoring phone app. The app tries each of the three cloud identities in turn and keeps the one that works. The password is encrypted with a key held in the Android Keystore; the username and identity sit in the app's private storage, which is excluded from Android backup. With **Remember me** off, the account, session and saved history are removed the next time the app is opened.
 
 The SolarPower host is plain http (see [docs/API.md](../docs/API.md)), so the manifest allows cleartext traffic.
+
+## Raw readings
+
+Settings has a **Raw readings** row for troubleshooting. It asks the cloud for everything it reports for the selected inverter (the live rows, the vendor's flow summary, and the columns of today's history with their latest values) and shows it as text you can copy or share. The serial number and logger PN are replaced first. It is how to find out whether a model reports a figure the app does not use yet, such as grid or feed-in power on an inverter with reverse metering. It sends one more read-only query, `webQueryDeviceEnergyFlowEs`, which is on the allow-list.

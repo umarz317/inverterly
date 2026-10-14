@@ -137,6 +137,8 @@ object DessReadOnly {
     val actions: Set<String> = setOf(
         "webQueryDeviceEs", "queryDevices", "queryDeviceLastData", "queryDeviceWarning",
         "queryPlants", "webQueryCollectorsEs", "queryDeviceDataOneDay",
+        // The vendor's own flow summary. Only the raw-readings screen asks for it, to see what the cloud reports.
+        "webQueryDeviceEnergyFlowEs",
     )
 
     /** Parameters the client adds itself. An action string must not bring its own, above all not a second `action`. */

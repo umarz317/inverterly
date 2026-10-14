@@ -349,6 +349,15 @@ class AppStore(
 
     // endregion
 
+    /** The raw cloud readings for the current inverter, or the reason they could not be read. */
+    suspend fun rawReadings(): String = try {
+        provider.fetchRaw()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        describe(e)
+    }
+
     // region State helpers
 
     /**

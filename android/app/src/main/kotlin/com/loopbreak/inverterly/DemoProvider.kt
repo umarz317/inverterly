@@ -57,4 +57,5 @@ class DemoProvider(private val slow: Boolean = false) : SnapshotProviding {
     override suspend fun listDevices() = listOf(DeviceInfo("A", "Roof inverter", true), DeviceInfo("B", "Garage inverter"))
     override suspend fun selectDevice(id: String) {}
     override suspend fun reset() {}
+    override suspend fun fetchRaw() = "Made-up readings (demo)\n\nPV1 Input Power = 3420 W\nBattery Voltage = 53.4 V\nGrid Voltage = 236 V"
 }

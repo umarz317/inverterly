@@ -57,6 +57,9 @@ interface SnapshotProviding {
 
     /** Forget the account, session and readings so the next fetch starts from the saved account again. */
     suspend fun reset()
+
+    /** What the cloud says about this inverter, as plain text for the raw-readings screen. */
+    suspend fun fetchRaw(): String
 }
 
 /** Daily totals kept on disk, so a finished day is read from the cloud only once. */
@@ -302,6 +305,53 @@ class InverterService(
 
     // endregion
 
+    // region Raw readings
+
+    /**
+     * Everything the cloud reports for the inverter that might hold a figure the app does not use
+     * yet (a grid or feed-in power, say): the live rows, the vendor's flow summary and the columns
+     * of today's history with their latest values. Each part that fails says so instead of failing
+     * the rest. The serial number and logger PN are replaced, so the text is safe to send on.
+     */
+    override suspend fun fetchRaw(): String = withContext(dispatcher) {
+        val client = loadClient()
+        val device = loadDevice(client)
+        val query = device.query
+        val zone = plantZone(client, device)
+        val day = SnapshotParser.dayString(now(), zone)
+        val out = StringBuilder()
+        out.appendLine("Inverterly raw readings, ${now()}")
+        out.appendLine("Device code ${device.devcode}, address ${device.devaddr}")
+
+        suspend fun section(title: String, action: String, render: (JsonElement) -> String) {
+            out.appendLine().appendLine("== $title ==")
+            try {
+                out.appendLine(render(client.request(action)))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                out.appendLine("(${e.message})")
+            }
+        }
+        section("Live rows (queryDeviceLastData)", "queryDeviceLastData&$query&i18n=en_US") { dat ->
+            SnapshotParser.tableRows(dat).joinToString("\n") { row ->
+                "${row.title} = ${row.value.string ?: ""}${if (row.unit.isNotEmpty()) " " + row.unit else ""}"
+            }.ifEmpty { prettyJson.encodeToString(JsonElement.serializer(), dat) }
+        }
+        section("Flow summary (webQueryDeviceEnergyFlowEs)", "webQueryDeviceEnergyFlowEs&$query") { dat ->
+            prettyJson.encodeToString(JsonElement.serializer(), dat)
+        }
+        section("Today's columns, latest report (queryDeviceDataOneDay)", "queryDeviceDataOneDay&$query&date=$day&i18n=en_US") { dat ->
+            val titles = (dat["title"].array ?: emptyList()).map { it["title"].string ?: it.string ?: "?" }
+            val last = dat["row"].array?.lastOrNull()
+            val fields = (last["field"].array ?: last.array ?: emptyList()).map { it.string ?: "" }
+            if (titles.isEmpty()) "(no columns)" else titles.indices.joinToString("\n") { i -> "${titles[i]} = ${fields.getOrNull(i) ?: ""}" }
+        }
+        out.toString().replace(device.sn, "<serial>").replace(device.pn, "<logger>")
+    }
+
+    // endregion
+
     // region Inverters
 
     /** The inverters on the account, by the name given in the phone app, else by what each one says it is. */
@@ -431,6 +481,8 @@ class InverterService(
     }
 
     // endregion
+
+    private val prettyJson = kotlinx.serialization.json.Json { prettyPrint = true }
 
     companion object {
         /** The logger only reports about every 5 minutes, so asking more often than this buys nothing. */
