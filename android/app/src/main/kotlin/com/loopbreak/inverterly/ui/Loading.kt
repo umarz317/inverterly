@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.PI
@@ -63,8 +65,9 @@ private fun RotatingLine() {
             if (index < Lines.lastIndex) index++ else index = 1
         }
     }
-    Crossfade(index, animationSpec = tween(500), label = "line") { i ->
-        Text(Lines[i] + "…", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
+    // Full width and centred text, so a line that is longer or shorter than the last never sits off to one side mid-fade.
+    Crossfade(index, Modifier.fillMaxWidth(), animationSpec = tween(500), label = "line") { i ->
+        Text(Lines[i] + "…", Modifier.fillMaxWidth(), color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp, textAlign = TextAlign.Center)
     }
 }
 
@@ -123,8 +126,8 @@ fun LoadingScreen() {
                 drawPath(wavePath, Brush.horizontalGradient(listOf(Color.Transparent, Color.White, Color.White, Color.Transparent), left, right),
                     style = Stroke(3.6f * u, cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(horizontal = 32.dp)) {
-                Text("Reading your inverter", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp)) {
+                Text("Reading your inverter", Modifier.fillMaxWidth(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                 RotatingLine()
             }
         }
