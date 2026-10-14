@@ -27,9 +27,9 @@ class DemoProvider(private val slow: Boolean = false) : SnapshotProviding {
         pvPowerW = 3420.0, pvVoltage = 312.0,
         loadPowerW = 1180.0, loadApparentVA = 1290.0, loadPercent = 20.0,
         outputVoltage = 230.0, outputHz = 50.0,
-        batteryPercent = 78.0, batteryVoltage = 53.4, batteryChargeA = 38.0,
+        batteryPercent = 78.0, batteryVoltage = 53.4, batteryChargeA = 20.0,
         gridVoltage = 236.0, gridHz = 50.0, ratedPowerW = 6000.0,
-        todayKWh = 14.2, machineType = "Hybrid 6 kW", collectorOnline = true,
+        todayKWh = 14.2, machineType = "Grid Tie", collectorOnline = true,
     )
 
     override suspend fun fetchToday(): DayCurve {
@@ -43,7 +43,8 @@ class DemoProvider(private val slow: Boolean = false) : SnapshotProviding {
             val load = 600 + 500 * max(0.0, sin((hour - 6) / 4)) + if (hour > 18) 900 else 0
             val battery = if (hour < 8) 62 - hour * 3 else min(100.0, 38 + (hour - 8) * 8)
             DayCurvePoint(start.plusSeconds(t.toLong()), sun, load,
-                if (sun < load && (hour < 6 || hour > 21)) load - sun else 0.0, battery)
+                if (sun < load && (hour < 6 || hour > 21)) load - sun else 0.0, battery,
+                exportW = if (hour in 10.0..15.0) max(0.0, sun - load - 600) * 0.9 else 0.0)
         }.toList()
         return DayCurve(LocalDate.now(zone).toString(), start, points)
     }
@@ -51,7 +52,7 @@ class DemoProvider(private val slow: Boolean = false) : SnapshotProviding {
     override suspend fun fetchDayTotals(day: String): DayTotals {
         val seed = (day.hashCode() % 1000) / 1000.0
         val isToday = day == LocalDate.now().toString()
-        return DayTotals(day, 14 + 8 * abs(seed), 2 + 4 * abs(seed - 0.5), 18 + 3 * abs(seed), !isToday)
+        return DayTotals(day, 14 + 8 * abs(seed), 2 + 4 * abs(seed - 0.5), 18 + 3 * abs(seed), !isToday, 3 + 2 * abs(seed))
     }
 
     override suspend fun listDevices() = listOf(DeviceInfo("A", "Roof inverter", true), DeviceInfo("B", "Garage inverter"))

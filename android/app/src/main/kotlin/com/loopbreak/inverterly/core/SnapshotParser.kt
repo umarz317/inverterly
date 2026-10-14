@@ -300,6 +300,7 @@ object SnapshotParser {
         val chargeColumn = column("battery charging current")
         val dischargeColumn = column("battery discharging current")
         val gridColumn = column("grid voltage")
+        val typeColumn = column("machine type")
 
         val byTime = HashMap<Instant, DayCurvePoint>()
         for (report in reports) {
@@ -315,8 +316,10 @@ object SnapshotParser {
                 batteryChargeA = number(chargeColumn) ?: 0.0,
                 batteryDischargeA = number(dischargeColumn) ?: 0.0,
                 gridVoltage = number(gridColumn),
+                machineType = typeColumn?.let { fields.getOrNull(it).string },
             )
-            byTime[time] = DayCurvePoint(time, reading.pvPowerW, reading.loadPowerW, reading.gridPowerW, number(batteryColumn))
+            byTime[time] = DayCurvePoint(time, reading.pvPowerW, reading.loadPowerW, reading.gridPowerW, number(batteryColumn),
+                reading.exportPowerW)
         }
         return empty.copy(points = byTime.values.sortedBy { it.time })
     }
@@ -340,7 +343,7 @@ object SnapshotParser {
         val curve = dayCurve(dat, day, timeZone, now)
         val last = curve.points.lastOrNull() ?: return null
         val sum = curve.totals(if (complete) last.time.plusSeconds(300) else now)
-        return DayTotals(day, sum.solarKWh, sum.gridKWh, sum.loadKWh, complete)
+        return DayTotals(day, sum.solarKWh, sum.gridKWh, sum.loadKWh, complete, sum.exportKWh)
     }
 
     // endregion

@@ -50,3 +50,9 @@ The SolarPower host is plain http (see [docs/API.md](../docs/API.md)), so the ma
 ## Raw readings
 
 Settings has a **Raw readings** row for troubleshooting. It asks the cloud for everything it reports for the selected inverter (the live rows, the vendor's flow summary, and the columns of today's history with their latest values) and shows it as text you can copy or share. The serial number and logger PN are replaced first. It is how to find out whether a model reports a figure the app does not use yet, such as grid or feed-in power on an inverter with reverse metering. It sends one more read-only query, `webQueryDeviceEnergyFlowEs`, which is on the allow-list.
+
+## Grid export (reverse metering)
+
+An inverter that reports itself as a "Grid Tie" can send surplus power to the grid, but the cloud has no export reading for it (its grid power is always 0). So the app estimates it: the power the panels make beyond the load and the battery's charging, less about 5% for conversion losses, and only with grid voltage present. A small surplus is treated as measurement error. Summed over the logger's 5-minute readings it gives kWh exported per day and month.
+
+It shows as an "Exporting" Grid tile and a reversed grid flow on Now, an Export total on Today and History, and an Export column in the History list. Models that report "Off Grid Tie", or no type at all, never show export. It is an estimate: check it against your meter before relying on it for billing. The iOS app does not estimate export yet.

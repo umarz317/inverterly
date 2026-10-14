@@ -146,7 +146,7 @@ private class HeroState {
     fun advance(now: Double, dt: Double) {
         val f = clean(flows(now))
         phase[0] += rate(f.solarW) * dt
-        phase[1] += rate(f.gridW) * dt
+        phase[1] += rate(max(f.gridW, f.exportW)) * dt
         phase[2] += rate(abs(f.batteryW)) * dt
         phase[3] += rate(f.loadW) * dt
     }
@@ -222,7 +222,7 @@ private fun finite(x: Double) = if (x.isFinite()) x else 0.0
 
 /** A reading with anything unusable zeroed, so one bad number from the feed cannot poison the drawing. */
 private fun clean(f: EnergyFlows) = EnergyFlows(max(0.0, finite(f.solarW)), max(0.0, finite(f.gridW)),
-    finite(f.batteryW), max(0.0, finite(f.loadW)))
+    finite(f.batteryW), max(0.0, finite(f.loadW)), max(0.0, finite(f.exportW)))
 
 /** [HeroMath.intensity] with a soft start, so a few stray watts draw a faint comet, not one at its floor. */
 private fun level(watts: Double) = HeroMath.intensity(watts) * smooth(1.0, 25.0, watts)
@@ -355,7 +355,10 @@ private fun DrawScope.drawFlow(
     fun eased(a: Double, b: Double) = a + (b - a) * progress
     val cut = if (outage) 1.0 else 0.0
     val solarLevel = eased(level(before.solarW), level(after.solarW))
-    val gridLevel = eased(level(before.gridW), level(after.gridW)) * (1 - cut)
+    val importLevel = eased(level(before.gridW), level(after.gridW)) * (1 - cut)
+    val exportLevel = eased(level(before.exportW), level(after.exportW))
+    // The grid conduit carries whichever way the power is going: in from the grid, or out to it.
+    val gridLevel = max(importLevel, exportLevel)
     val homeLevel = eased(level(before.loadW), level(after.loadW))
     // Without a battery voltage the feed gives current but no watts: the direction is still known,
     // and is drawn at the faintest real level rather than left out.
@@ -383,7 +386,9 @@ private fun DrawScope.drawFlow(
 
     val comets = ArrayList<Comet>()
     addComets(comets, sunTrack, true, solarLevel, state.phase[0], vigor) { tones.solar }
-    addComets(comets, gridTrack, true, gridLevel, state.phase[1] + 0.37, vigor) { tones.grid }
+    addComets(comets, gridTrack, exportLevel <= importLevel, gridLevel, state.phase[1] + 0.37, vigor) { slot ->
+        if (exportLevel > importLevel) feedColor(slot, true) else tones.grid
+    }
     addComets(comets, battTrack, !charging, battLevel, state.phase[2] + 0.61, vigor) { slot ->
         if (charging) feedColor(slot, false) else battTone
     }
@@ -487,8 +492,9 @@ private fun DrawScope.drawFlow(
 
     // Grid: its watts, or "Outage" once the line is gone.
     if (outage) drawCentered(measurer.layout(valueText("Outage", 1.0, tones.alert)), valuePoint(gridC))
+    else if (flows.exportW > 15) drawCentered(measurer.layout(reading("↑ " + PowerFormat.watts(flows.exportW), gridOn)), valuePoint(gridC))
     else drawCentered(measurer.layout(reading(PowerFormat.watts(gridW), gridOn)), valuePoint(gridC))
-    drawCentered(measurer.layout(captionText("Grid", quiet + 0.12 * gridOn)), captionPoint(gridC))
+    drawCentered(measurer.layout(captionText(if (flows.exportW > 15) "Export" else "Grid", quiet + 0.12 * gridOn)), captionPoint(gridC))
 
     // Battery: watts (or amps when that is all the feed gives), then charge and what it is doing.
     val filling = if (blind) amps > 0 else battW > 15

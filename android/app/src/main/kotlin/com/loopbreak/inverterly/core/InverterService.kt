@@ -77,6 +77,8 @@ class HistoryStore(private val file: File?) {
                 gridKWh = value["gridKWh"].double ?: continue,
                 loadKWh = value["loadKWh"].double ?: continue,
                 complete = value["complete"].bool ?: continue,
+                // Entries saved before export was estimated have no figure; skipping them reads those days again.
+                exportKWh = value["exportKWh"].double ?: continue,
             )
         }
         return out
@@ -88,7 +90,7 @@ class HistoryStore(private val file: File?) {
             for ((key, d) in days.toSortedMap()) {
                 put(key, buildJsonObject {
                     put("day", d.day); put("solarKWh", d.solarKWh); put("gridKWh", d.gridKWh)
-                    put("loadKWh", d.loadKWh); put("complete", d.complete)
+                    put("loadKWh", d.loadKWh); put("complete", d.complete); put("exportKWh", d.exportKWh)
                 })
             }
         }

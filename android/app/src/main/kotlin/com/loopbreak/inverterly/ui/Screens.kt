@@ -96,6 +96,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 private enum class PhoneTab(val title: String, val icon: ImageVector) {
@@ -239,7 +240,7 @@ private val EnergySnapshot.statusLine: String
             val verb = if (batteryPowerW > 30) "charging" else if (batteryPowerW < -30) "discharging" else "idle"
             parts += "Battery ${it.roundToInt()}%, $verb"
         }
-        parts += if (gridPresent) "grid available" else "grid outage"
+        parts += if (exportPowerW > 0) "exporting ${PowerFormat.watts(exportPowerW)}" else if (gridPresent) "grid available" else "grid outage"
         return parts.joinToString(" · ")
     }
 
@@ -361,9 +362,11 @@ private fun Readings(snapshot: EnergySnapshot) {
             Reading(
                 if (snapshot.gridPresent) Icons.Filled.Power else Icons.Filled.PowerOff,
                 if (snapshot.gridPresent) tones.grid else tones.alert, "Grid",
-                if (snapshot.gridPresent) (if (snapshot.gridPowerW > 0) PowerFormat.watts(snapshot.gridPowerW) else "Standby") else "Outage",
-                if (snapshot.gridPresent) "%.0f V".format(Locale.US, snapshot.gridVoltage ?: 0.0) else "No supply",
-                quiet = snapshot.gridPresent && snapshot.gridPowerW < 1, modifier = Modifier.weight(1f),
+                if (!snapshot.gridPresent) "Outage" else if (snapshot.exportPowerW > 0) PowerFormat.watts(snapshot.exportPowerW)
+                else if (snapshot.gridPowerW > 0) PowerFormat.watts(snapshot.gridPowerW) else "Standby",
+                if (!snapshot.gridPresent) "No supply" else if (snapshot.exportPowerW > 0) "Exporting (est.)"
+                else "%.0f V".format(Locale.US, snapshot.gridVoltage ?: 0.0),
+                quiet = snapshot.gridPresent && snapshot.gridPowerW < 1 && snapshot.exportPowerW < 1, modifier = Modifier.weight(1f),
             )
             Reading(
                 Icons.Filled.Home, MaterialTheme.colorScheme.onSurfaceVariant, "Output",
@@ -413,6 +416,7 @@ private fun Details(snapshot: EnergySnapshot, store: AppStore) {
             rows += "Output" to listOf(v(snapshot.outputVoltage, "%.1f V"), v(snapshot.outputHz, "%.1f Hz"))
             rows += "Load" to listOf(PowerFormat.watts(snapshot.loadPowerW), snapshot.loadApparentVA?.let { "${it.roundToInt()} VA" })
             if (snapshot.gridPowerW > 0) rows += "Grid draw (estimated)" to listOf(PowerFormat.watts(snapshot.gridPowerW))
+            if (snapshot.exportPowerW > 0) rows += "Grid export (estimated)" to listOf(PowerFormat.watts(snapshot.exportPowerW))
             snapshot.machineType?.let { rows += "Type" to listOf(it) }
             snapshot.collectorOnline?.let { rows += "Logger" to listOf(if (it) "Online" else "Offline") }
             snapshot.deviceTime?.let {
@@ -456,7 +460,7 @@ private fun TodayScreen(store: AppStore) {
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
         if (curve != null && curve.points.isNotEmpty()) {
             val totals = remember(curve, store.clock) { curve.totals() }
-            MixSummary(totals.solarKWh, totals.gridKWh, totals.loadKWh)
+            MixSummary(totals.solarKWh, totals.gridKWh, totals.loadKWh, totals.exportKWh)
             PhoneCard { PowerChart(curve, selection, { selection = it }) }
             if (curve.points.any { it.batteryPercent != null }) {
                 PhoneCard { BatteryChart(curve, selection, { selection = it }) }
@@ -487,11 +491,13 @@ private fun Placeholder(loading: Boolean, loadingText: String, message: String, 
 
 /** A period's share of solar as one large figure and a bar, with the three totals under it. */
 @Composable
-private fun MixSummary(solarKWh: Double, gridKWh: Double, loadKWh: Double) {
+private fun MixSummary(solarKWh: Double, gridKWh: Double, loadKWh: Double, exportKWh: Double = 0.0) {
     val tones = marks
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
-    val supplied = solarKWh + gridKWh
-    val share = if (supplied > 0) solarKWh / supplied else 0.0
+    // What went to the grid was made by the panels but did not serve the house, so it is left out of the share.
+    val usedSolar = max(0.0, solarKWh - exportKWh)
+    val supplied = usedSolar + gridKWh
+    val share = if (supplied > 0) usedSolar / supplied else 0.0
     PhoneCard(Modifier.semantics(mergeDescendants = true) {}) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("${(share * 100).roundToInt()}%", fontSize = 40.sp, fontWeight = FontWeight.SemiBold, lineHeight = 44.sp)
@@ -499,13 +505,14 @@ private fun MixSummary(solarKWh: Double, gridKWh: Double, loadKWh: Double) {
         }
         Row(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(secondary.copy(alpha = 0.15f)),
             horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            if (solarKWh > 0) Box(Modifier.weight(share.toFloat().coerceAtLeast(0.02f)).fillMaxSize().background(tones.solar))
+            if (usedSolar > 0) Box(Modifier.weight(share.toFloat().coerceAtLeast(0.02f)).fillMaxSize().background(tones.solar))
             if (gridKWh > 0) Box(Modifier.weight((1 - share).toFloat().coerceAtLeast(0.02f)).fillMaxSize().background(tones.grid))
         }
         Row {
             Total("Solar", solarKWh, tones.solar, Modifier.weight(1f))
             Total("Grid", gridKWh, tones.grid, Modifier.weight(1f))
             Total("Load", loadKWh, null, Modifier.weight(1f))
+            if (exportKWh > 0) Total("Export", exportKWh, tones.battery, Modifier.weight(1f))
         }
     }
 }
@@ -539,11 +546,11 @@ private fun HistoryScreen(store: AppStore) {
     val periods = remember(store.days, store.historyTab) {
         if (byDay) store.currentMonthDays.mapNotNull { d ->
             val date = runCatching { LocalDate.parse(d.day) }.getOrNull() ?: return@mapNotNull null
-            Period(d.day, date, dayLabel(date), d.solarKWh, d.gridKWh, d.loadKWh, !d.complete)
+            Period(d.day, date, dayLabel(date), d.solarKWh, d.gridKWh, d.loadKWh, !d.complete, d.exportKWh)
         } else store.months.mapNotNull { m ->
             val date = runCatching { LocalDate.parse(m.month + "-01") }.getOrNull() ?: return@mapNotNull null
             Period(m.month, date, DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()).format(date),
-                m.solarKWh, m.gridKWh, m.loadKWh, false)
+                m.solarKWh, m.gridKWh, m.loadKWh, false, m.exportKWh)
         }
     }
 
@@ -565,7 +572,7 @@ private fun HistoryScreen(store: AppStore) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(summaryTitle(store.historyTab, periods.size), style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
-                MixSummary(periods.sumOf { it.solar }, periods.sumOf { it.grid }, periods.sumOf { it.load })
+                MixSummary(periods.sumOf { it.solar }, periods.sumOf { it.grid }, periods.sumOf { it.load }, periods.sumOf { it.export })
             }
             PhoneCard { PeriodChart(periods, byDay, selection, { selection = it }) }
             PeriodList(periods)
@@ -600,12 +607,15 @@ private fun dayLabel(date: LocalDate): String {
 private fun PeriodList(periods: List<Period>) {
     val tones = marks
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    // The Export column appears only when some period sent power to the grid.
+    val showExport = periods.any { it.export > 0 }
     PhoneCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.weight(1f))
             ListColumn("Solar", tones.solar)
             ListColumn("Grid", tones.grid)
             ListColumn("Load", null)
+            if (showExport) ListColumn("Export", tones.battery)
         }
         periods.forEachIndexed { index, period ->
             if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -613,12 +623,13 @@ private fun PeriodList(periods: List<Period>) {
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 2.dp).semantics(mergeDescendants = true) {
                     contentDescription = "${period.label}${if (period.live) ", so far" else ""}: solar ${PowerFormat.kWh(period.solar)}, " +
-                        "grid ${PowerFormat.kWh(period.grid)}, load ${PowerFormat.kWh(period.load)}"
+                        "grid ${PowerFormat.kWh(period.grid)}, load ${PowerFormat.kWh(period.load)}" +
+                        (if (period.export > 0) ", exported ${PowerFormat.kWh(period.export)}" else "")
                 },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(period.label, Modifier.weight(1f), color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                for ((i, value) in listOf(period.solar, period.grid, period.load).withIndex()) {
+                for ((i, value) in listOfNotNull(period.solar, period.grid, period.load, if (showExport) period.export else null).withIndex()) {
                     Text(PowerFormat.kWhNumber(value), Modifier.width(58.dp), textAlign = TextAlign.End, color = color,
                         fontWeight = if (i == 2) FontWeight.SemiBold else FontWeight.Normal)
                 }

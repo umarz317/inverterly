@@ -14,8 +14,8 @@ android {
         applicationId = "com.loopbreak.inverterly"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
     }
 
     // keystore.properties (never committed) holds the release key; without it the release build is unsigned.

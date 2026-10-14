@@ -320,6 +320,8 @@ data class Period(
     val load: Double,
     /** Today, still adding up. */
     val live: Boolean,
+    /** Estimated energy sent to the grid. */
+    val export: Double = 0.0,
 )
 
 /** Solar stacked under grid for each period; dragging reads one out, otherwise the latest shows. */
@@ -349,6 +351,7 @@ fun PeriodChart(periods: List<Period>, byDay: Boolean, selection: Period?, onSel
                 KwhValue("Solar", shown.solar, tones.solar, Modifier.weight(1f))
                 KwhValue("Grid", shown.grid, tones.grid, Modifier.weight(1f))
                 KwhValue("Load", shown.load, null, Modifier.weight(1f))
+                if (shown.export > 0) KwhValue("Export", shown.export, tones.battery, Modifier.weight(1f))
             }
         }
         androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))

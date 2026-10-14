@@ -83,6 +83,23 @@ data class EnergySnapshot(
             return if (balance > floor) balance else 0.0
         }
 
+    /** Only a model that reports itself as a "Grid Tie" can send power to the grid; "Off Grid Tie" cannot, and an unknown model is assumed not to. */
+    val canExport: Boolean
+        get() = machineType?.lowercase()?.let { "grid tie" in it && "off grid" !in it } ?: false
+
+    /**
+     * Power sent to the grid, estimated: what the panels make beyond the load and the battery's
+     * charging, less about 5% for conversion losses (the panels are measured at the DC input, the
+     * load at the AC output). The cloud has no export figure, so this is a balance, not a reading,
+     * and a small surplus is treated as measurement error, like the grid draw.
+     */
+    val exportPowerW: Double
+        get() {
+            if (!canExport || !gridPresent || pvPowerW <= 0) return 0.0
+            val net = pvPowerW - loadPowerW - batteryPowerW - pvPowerW * CONVERSION_LOSS
+            return if (net > EXPORT_FLOOR_W) net else 0.0
+        }
+
     val mode: InverterMode
         get() = when {
             batteryDischargeA > 0.4 -> InverterMode.Battery
@@ -93,7 +110,7 @@ data class EnergySnapshot(
         }
 
     val flows: EnergyFlows
-        get() = EnergyFlows(max(0.0, pvPowerW), gridPowerW, batteryPowerW, max(0.0, loadPowerW))
+        get() = EnergyFlows(max(0.0, pvPowerW), gridPowerW, batteryPowerW, max(0.0, loadPowerW), exportPowerW)
 
     /** True when the logger's last report is older than [seconds]. */
     fun isStale(seconds: Long = 15 * 60, now: Instant = Instant.now()): Boolean {
@@ -102,12 +119,16 @@ data class EnergySnapshot(
     }
 }
 
-/** The four power flows the UI animates. [batteryW] is signed: positive charges the battery. */
+private const val CONVERSION_LOSS = 0.05
+private const val EXPORT_FLOOR_W = 60.0
+
+/** The power flows the UI animates. [batteryW] is signed: positive charges the battery. [exportW] goes to the grid. */
 data class EnergyFlows(
     val solarW: Double = 0.0,
     val gridW: Double = 0.0,
     val batteryW: Double = 0.0,
     val loadW: Double = 0.0,
+    val exportW: Double = 0.0,
 ) {
     val batteryChargeW: Double get() = max(0.0, batteryW)
     val batteryDischargeW: Double get() = max(0.0, -batteryW)
@@ -115,7 +136,7 @@ data class EnergyFlows(
     fun mix(other: EnergyFlows, t: Double): EnergyFlows {
         fun lerp(a: Double, b: Double) = a + (b - a) * t
         return EnergyFlows(lerp(solarW, other.solarW), lerp(gridW, other.gridW),
-            lerp(batteryW, other.batteryW), lerp(loadW, other.loadW))
+            lerp(batteryW, other.batteryW), lerp(loadW, other.loadW), lerp(exportW, other.exportW))
     }
 
     companion object { val Zero = EnergyFlows() }
@@ -160,6 +181,8 @@ data class DayCurvePoint(
     /** Estimated grid draw, watts, worked out like [EnergySnapshot.gridPowerW]. */
     val gridW: Double = 0.0,
     val batteryPercent: Double? = null,
+    /** Estimated power sent to the grid, watts, worked out like [EnergySnapshot.exportPowerW]. */
+    val exportW: Double = 0.0,
 )
 
 /** Today's readings in time order. Empty right after midnight, before the first report of the day. */
@@ -174,14 +197,14 @@ data class DayCurve(
     val isEmpty get() = points.isEmpty()
     val dayEnd: Instant get() = dayStart.plusSeconds(24 * 3600)
 
-    data class Totals(val solarKWh: Double, val gridKWh: Double, val loadKWh: Double)
+    data class Totals(val solarKWh: Double, val gridKWh: Double, val loadKWh: Double, val exportKWh: Double = 0.0)
 
     /**
      * Energy so far today, in kWh, added up the same way as [SnapshotParser.dayTotals]: each reading
      * counts until the next one, at most ten minutes, and the last one until [now], at most five.
      */
     fun totals(now: Instant = Instant.now()): Totals {
-        var solar = 0.0; var grid = 0.0; var load = 0.0
+        var solar = 0.0; var grid = 0.0; var load = 0.0; var export = 0.0
         for ((index, point) in points.withIndex()) {
             val seconds = if (index + 1 < points.size) {
                 min(secondsBetween(point.time, points[index + 1].time), 600.0)
@@ -192,8 +215,9 @@ data class DayCurve(
             solar += max(0.0, point.pvW) * hours
             grid += point.gridW * hours
             load += max(0.0, point.loadW) * hours
+            export += point.exportW * hours
         }
-        return Totals(solar / 1000, grid / 1000, load / 1000)
+        return Totals(solar / 1000, grid / 1000, load / 1000, export / 1000)
     }
 
     /** The reading closest to [time], or null without one. */
@@ -215,6 +239,8 @@ data class DayTotals(
     val loadKWh: Double,
     /** False for a day that was still going when it was read; those are read again. */
     val complete: Boolean,
+    /** Estimated energy sent to the grid. Zero on a model that cannot export. */
+    val exportKWh: Double = 0.0,
 )
 
 /** The days of one month added up. */
@@ -225,6 +251,7 @@ data class MonthTotals(
     val solarKWh: Double,
     val gridKWh: Double,
     val loadKWh: Double,
+    val exportKWh: Double = 0.0,
 ) {
     companion object {
         /** Groups days by month, newest month first. */
@@ -234,7 +261,7 @@ data class MonthTotals(
                 val month = day.day.take(7)
                 val t = byMonth[month] ?: MonthTotals(month, 0, 0.0, 0.0, 0.0)
                 byMonth[month] = t.copy(days = t.days + 1, solarKWh = t.solarKWh + day.solarKWh,
-                    gridKWh = t.gridKWh + day.gridKWh, loadKWh = t.loadKWh + day.loadKWh)
+                    gridKWh = t.gridKWh + day.gridKWh, loadKWh = t.loadKWh + day.loadKWh, exportKWh = t.exportKWh + day.exportKWh)
             }
             return byMonth.values.sortedByDescending { it.month }
         }
