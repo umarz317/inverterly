@@ -56,6 +56,7 @@ Grid power is not in the vendor's data for this kind of inverter. The app estima
 
 ## Documentation
 
+- [android/README.md](android/README.md): the Android app, built from the same cloud client in Kotlin.
 - [iOS/README.md](iOS/README.md): installing on your device, demo mode, and how the app is built.
 - [docs/API.md](docs/API.md): the cloud API: hosts, login and request signing, each route the app uses, and the settings routes it deliberately does not send.
 - [docs/LIBRARY.md](docs/LIBRARY.md): using `InverterCore` from your own Swift code.
