@@ -13,11 +13,17 @@ Like the Mac app it only reads. No code path can change an inverter setting.
 ## What it shows
 
 - **Now**: whether the house runs on solar, battery or grid, the animated energy flow, the load against the inverter's rating, and a tile each for solar, battery, grid and output. Details (voltages, currents, frequency, logger status) are underneath.
-- **Today**: how much of today's energy came from the sun, with solar, grid and load totals; the day's power curve, which you can drag across to read any moment; the day's peaks; and the battery's charge through the day.
+- **Today**: how much of today's energy came from the sun, with solar, grid and load totals; the day's power curve, which you can drag across to read any moment; and the battery's charge through the day.
 - **History**: Days for this month or Months going back, with the period's energy mix, a bar per day or month (drag to pick one), and the list.
 - **Settings** (the gear): pick the inverter when the account has more than one, choose the illustration, and sign out.
 
 The dot under each title is green while readings are fresh, orange once the logger has gone quiet, and grey before the first reading. Pull down on any tab to refresh. The app reads while it is in front and stops when it is not; it has no background refresh or widgets.
+
+## Grid export
+
+An inverter that reports itself as a "Grid Tie" can send surplus power to the grid, but the cloud has no export reading for it: its grid power is always 0. So the app estimates it as the power the panels make beyond the load and the battery's charging, less about 5% for conversion losses, and only with grid voltage present. A small surplus (60 W or less) is treated as measurement error. Summed over the logger's 5-minute readings it gives kWh exported per day and month.
+
+It shows as an exporting Grid tile and a reversed grid flow on Now, an Export total on Today and History, and Export on each History row. Models that report "Off Grid Tie", or no type at all, never show export. It is an estimate: check it against your meter before relying on it for billing. Days saved before this was added are read from the cloud once more to fill it in.
 
 ## Sign in
 

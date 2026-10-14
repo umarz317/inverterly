@@ -18,8 +18,6 @@ struct NowScreen: View {
                 details(snapshot)
             } else if let message = store.errorMessage {
                 FailedView(message: message) { Task { await store.refresh(force: true) } }
-            } else {
-                PhoneReadingView()
             }
         }
     }
@@ -89,9 +87,11 @@ struct NowScreen: View {
             }
             GridRow {
                 Reading(symbol: MenuBarMetric.gridSymbol(snapshot), tint: snapshot.gridPresent ? .gridMark : .alertAccent, caption: "Grid",
-                        value: snapshot.gridPresent ? (snapshot.gridPowerW > 0 ? PowerFormat.watts(snapshot.gridPowerW) : "Standby") : "Outage",
-                        detail: snapshot.gridPresent ? String(format: "%.0f V", snapshot.gridVoltage ?? 0) : "No supply",
-                        quiet: snapshot.gridPresent && snapshot.gridPowerW < 1)
+                        value: !snapshot.gridPresent ? "Outage" : snapshot.exportPowerW > 0 ? PowerFormat.watts(snapshot.exportPowerW)
+                            : snapshot.gridPowerW > 0 ? PowerFormat.watts(snapshot.gridPowerW) : "Standby",
+                        detail: !snapshot.gridPresent ? "No supply" : snapshot.exportPowerW > 0 ? "Exporting (est.)"
+                            : String(format: "%.0f V", snapshot.gridVoltage ?? 0),
+                        quiet: snapshot.gridPresent && snapshot.gridPowerW < 1 && snapshot.exportPowerW < 1)
                 Reading(symbol: "house", tint: .secondary, caption: "Output",
                         value: snapshot.outputVoltage.map { String(format: "%.0f V", $0) } ?? "–",
                         detail: snapshot.outputHz.map { String(format: "%.1f Hz", $0) } ?? "–")
@@ -112,66 +112,6 @@ struct NowScreen: View {
         .foregroundStyle(.primary)
         .padding(16)
         .phoneCard()
-    }
-}
-
-/// Until the first reading: what is happening, a pulse along a row of dashes like power on a wire,
-/// and the tiles' places held so the screen does not jump when the numbers land.
-private struct PhoneReadingView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breathing = false
-
-    var body: some View {
-        VStack(spacing: 16) {
-            VStack(spacing: 18) {
-                Image("Logo")
-                    .resizable()
-                    .frame(width: 72, height: 72)
-                    .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-                    .shadow(color: Color.solarMark.opacity(breathing ? 0.45 : 0.1), radius: breathing ? 18 : 6)
-                    .scaleEffect(breathing ? 1.04 : 1)
-                VStack(spacing: 6) {
-                    Text("Reading your inverter").font(.title3.weight(.semibold))
-                    Text("Getting the latest numbers from the inverter cloud. This takes a few seconds.")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
-                    let beat = timeline.date.timeIntervalSinceReferenceDate * 4.2
-                    HStack(spacing: 6) {
-                        ForEach(0..<5, id: \.self) { index in
-                            Capsule().fill(Color.solarMark)
-                                .frame(width: 16, height: 4)
-                                .opacity(reduceMotion ? 0.4 : ReadingView.glow(of: index, at: beat))
-                        }
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 24).padding(.vertical, 36)
-            .phoneCard()
-
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                ForEach(0..<4, id: \.self) { _ in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Circle().frame(width: 30, height: 30)
-                        RoundedRectangle(cornerRadius: 6).frame(width: 90, height: 22)
-                        RoundedRectangle(cornerRadius: 4).frame(width: 60, height: 12)
-                    }
-                    .foregroundStyle(.quaternary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .phoneCard()
-                }
-            }
-            .opacity(breathing ? 0.6 : 1)
-            .accessibilityHidden(true)
-        }
-        .accessibilityElement(children: .combine)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { breathing = true }
-        }
     }
 }
 

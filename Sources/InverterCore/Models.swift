@@ -102,6 +102,29 @@ public struct EnergySnapshot: Sendable, Equatable {
         return balance > floor ? balance : 0
     }
 
+    /// Only a model that reports itself as a "Grid Tie" can send power to the grid. "Off Grid Tie"
+    /// cannot, and an unknown model is assumed not to.
+    public var canExport: Bool {
+        guard let type = machineType?.lowercased() else { return false }
+        return type.contains("grid tie") && !type.contains("off grid")
+    }
+
+    /// Power sent to the grid, in watts: an estimate, not a reading. The cloud has no export figure
+    /// for these inverters (`grid_active_power` is always 0), so it is what the panels make beyond
+    /// the load and the battery's charging, less an assumed conversion loss (the panels are measured
+    /// at the DC input, the load at the AC output). A small surplus is treated as measurement
+    /// error, like the grid draw. Check it against the meter before relying on it.
+    public var exportPowerW: Double {
+        guard canExport, gridPresent, pvPowerW > 0 else { return 0 }
+        let net = pvPowerW - loadPowerW - batteryPowerW - pvPowerW * Self.conversionLoss
+        return net > Self.exportFloorW ? net : 0
+    }
+
+    /// Assumed share of the panels' power lost converting DC to AC. An estimate, not a measurement.
+    static let conversionLoss = 0.05
+    /// Surpluses at or below this many watts count as rounding in the battery current and the readings.
+    static let exportFloorW = 60.0
+
     public var mode: InverterMode {
         if batteryDischargeA > 0.4 { return .battery }
         if gridPowerW > 0 { return .grid }
@@ -111,7 +134,8 @@ public struct EnergySnapshot: Sendable, Equatable {
     }
 
     public var flows: EnergyFlows {
-        EnergyFlows(solarW: max(0, pvPowerW), gridW: gridPowerW, batteryW: batteryPowerW, loadW: max(0, loadPowerW))
+        EnergyFlows(solarW: max(0, pvPowerW), gridW: gridPowerW, batteryW: batteryPowerW, loadW: max(0, loadPowerW),
+                    exportW: exportPowerW)
     }
 
     /// True when the logger's last report is older than `seconds`.
@@ -121,15 +145,17 @@ public struct EnergySnapshot: Sendable, Equatable {
     }
 }
 
-/// The four power flows the UI animates. `batteryW` is signed: positive charges the battery.
+/// The power flows the UI animates. `batteryW` is signed: positive charges the battery. `exportW`
+/// goes to the grid, where `gridW` comes from it.
 public struct EnergyFlows: Sendable, Equatable {
     public var solarW: Double
     public var gridW: Double
     public var batteryW: Double
     public var loadW: Double
+    public var exportW: Double
 
-    public init(solarW: Double = 0, gridW: Double = 0, batteryW: Double = 0, loadW: Double = 0) {
-        self.solarW = solarW; self.gridW = gridW; self.batteryW = batteryW; self.loadW = loadW
+    public init(solarW: Double = 0, gridW: Double = 0, batteryW: Double = 0, loadW: Double = 0, exportW: Double = 0) {
+        self.solarW = solarW; self.gridW = gridW; self.batteryW = batteryW; self.loadW = loadW; self.exportW = exportW
     }
 
     public static let zero = EnergyFlows()
@@ -140,7 +166,8 @@ public struct EnergyFlows: Sendable, Equatable {
     public func mix(_ other: EnergyFlows, _ t: Double) -> EnergyFlows {
         func lerp(_ a: Double, _ b: Double) -> Double { a + (b - a) * t }
         return EnergyFlows(solarW: lerp(solarW, other.solarW), gridW: lerp(gridW, other.gridW),
-                           batteryW: lerp(batteryW, other.batteryW), loadW: lerp(loadW, other.loadW))
+                           batteryW: lerp(batteryW, other.batteryW), loadW: lerp(loadW, other.loadW),
+                           exportW: lerp(exportW, other.exportW))
     }
 }
 

@@ -251,9 +251,11 @@ public struct InverterPanel: View {
                          : (snapshot.batteryVoltage.map { String(format: "%.1f V", $0) } ?? "–"),
                      quiet: false)
             StatTile(symbol: MenuBarMetric.gridSymbol(snapshot), caption: "Grid",
-                     value: snapshot.gridPresent ? (snapshot.gridPowerW > 0 ? PowerFormat.watts(snapshot.gridPowerW) : "Standby") : "Outage",
-                     detail: snapshot.gridPresent ? String(format: "%.0f V", snapshot.gridVoltage ?? 0) : "No supply",
-                     quiet: snapshot.gridPowerW < 1, alert: !snapshot.gridPresent)
+                     value: !snapshot.gridPresent ? "Outage" : snapshot.exportPowerW > 0 ? PowerFormat.watts(snapshot.exportPowerW)
+                         : snapshot.gridPowerW > 0 ? PowerFormat.watts(snapshot.gridPowerW) : "Standby",
+                     detail: !snapshot.gridPresent ? "No supply" : snapshot.exportPowerW > 0 ? "Exporting (est.)"
+                         : String(format: "%.0f V", snapshot.gridVoltage ?? 0),
+                     quiet: snapshot.gridPowerW < 1 && snapshot.exportPowerW < 1, alert: !snapshot.gridPresent)
             StatTile(symbol: "house", caption: "Output",
                      value: snapshot.outputVoltage.map { String(format: "%.0f V", $0) } ?? "–",
                      detail: snapshot.outputHz.map { String(format: "%.1f Hz", $0) } ?? "–",
@@ -286,7 +288,7 @@ extension EnergySnapshot {
             let verb = batteryPowerW > 30 ? "charging" : batteryPowerW < -30 ? "discharging" : "idle"
             parts.append("Battery \(Int(percent.rounded()))%, \(verb)")
         }
-        parts.append(gridPresent ? "grid available" : "grid outage")
+        parts.append(exportPowerW > 0 ? "exporting \(PowerFormat.watts(exportPowerW))" : gridPresent ? "grid available" : "grid outage")
         return parts.joined(separator: " · ")
     }
 
@@ -630,6 +632,9 @@ struct DetailsSection: View {
             row("Load", [PowerFormat.watts(snapshot.loadPowerW), snapshot.loadApparentVA.map { "\(Int($0.rounded())) VA" }])
             if snapshot.gridPowerW > 0 {
                 row("Grid draw (estimated)", [PowerFormat.watts(snapshot.gridPowerW)])
+            }
+            if snapshot.exportPowerW > 0 {
+                row("Grid export (estimated)", [PowerFormat.watts(snapshot.exportPowerW)])
             }
             if let type = snapshot.machineType { row("Type", [type]) }
             if let online = snapshot.collectorOnline { row("Logger", [online ? "Online" : "Offline"]) }

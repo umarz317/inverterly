@@ -11,9 +11,9 @@ struct DemoProvider: SnapshotProviding {
                        pvPowerW: 3420, pvVoltage: 312,
                        loadPowerW: 1180, loadApparentVA: 1290, loadPercent: 20,
                        outputVoltage: 230, outputHz: 50,
-                       batteryPercent: 78, batteryVoltage: 53.4, batteryChargeA: 38,
+                       batteryPercent: 78, batteryVoltage: 53.4, batteryChargeA: 20,
                        gridVoltage: 236, gridHz: 50, ratedPowerW: 6000,
-                       todayKWh: 14.2, machineType: "Hybrid 6 kW", collectorOnline: true)
+                       todayKWh: 14.2, machineType: "Grid Tie", collectorOnline: true)
     }
 
     func fetchToday() async throws -> DayCurve {
@@ -26,7 +26,9 @@ struct DemoProvider: SnapshotProviding {
             let load = 600 + 500 * max(0, sin((hour - 6) / 4)) + (hour > 18 ? 900 : 0)
             let battery = hour < 8 ? 62 - hour * 3 : min(100, 38 + (hour - 8) * 8)
             return DayCurvePoint(time: start.addingTimeInterval(t), pvW: sun, loadW: load,
-                                 gridW: sun < load && (hour < 6 || hour > 21) ? load - sun : 0, batteryPercent: battery)
+                                 gridW: sun < load && (hour < 6 || hour > 21) ? load - sun : 0, batteryPercent: battery,
+                                 // A midday surplus, as a Grid Tie model would send to the grid.
+                                 exportW: (10...15).contains(hour) ? max(0, sun - load - 600) * 0.9 : 0)
         }
         return DayCurve(day: Self.key(Date(), "yyyy-MM-dd"), dayStart: start, points: points)
     }
@@ -35,7 +37,7 @@ struct DemoProvider: SnapshotProviding {
         let seed = Double(day.hashValue % 1000) / 1000
         let isToday = day == Self.key(Date(), "yyyy-MM-dd")
         return DayTotals(day: day, solarKWh: 14 + 8 * abs(seed), gridKWh: 2 + 4 * abs(seed - 0.5),
-                         loadKWh: 18 + 3 * abs(seed), complete: !isToday)
+                         loadKWh: 18 + 3 * abs(seed), complete: !isToday, exportKWh: 3 + 2 * abs(seed))
     }
 
     func listDevices() async throws -> [DeviceInfo] {

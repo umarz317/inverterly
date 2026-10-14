@@ -25,7 +25,7 @@ struct HistoryScreen: View {
                     Text(summaryTitle(periods)).font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
                         .padding(.horizontal, 4)
                     MixSummary(totals: (periods.reduce(0) { $0 + $1.solar }, periods.reduce(0) { $0 + $1.grid },
-                                        periods.reduce(0) { $0 + $1.load }))
+                                        periods.reduce(0) { $0 + $1.load }, periods.reduce(0) { $0 + $1.export }))
                 }
                 PhoneCard { PeriodChart(periods: periods, unit: unit, selection: $selection) }
                 PeriodList(periods: periods)
@@ -44,14 +44,14 @@ struct HistoryScreen: View {
             return store.currentMonthDays.compactMap { day in
                 Period.date(day.day, "yyyy-MM-dd").map {
                     Period(id: day.day, date: $0, label: Period.dayLabel($0), solar: day.solarKWh, grid: day.gridKWh,
-                           load: day.loadKWh, live: !day.complete)
+                           load: day.loadKWh, live: !day.complete, export: day.exportKWh ?? 0)
                 }
             }
         case .months:
             return store.months.compactMap { month in
                 Period.date(month.month, "yyyy-MM").map {
                     Period(id: month.month, date: $0, label: $0.formatted(.dateTime.month(.wide).year()),
-                           solar: month.solarKWh, grid: month.gridKWh, load: month.loadKWh, live: false)
+                           solar: month.solarKWh, grid: month.gridKWh, load: month.loadKWh, live: false, export: month.exportKWh)
                 }
             }
         }
@@ -108,6 +108,8 @@ struct Period: Identifiable, Equatable {
     let load: Double
     /// Today, still adding up.
     let live: Bool
+    /// Estimated energy sent to the grid.
+    var export: Double = 0
 
     /// Parses the "2026-10" and "2026-10-13" keys, which are Gregorian whatever the phone is set to.
     static func date(_ text: String, _ format: String) -> Date? {
@@ -143,9 +145,10 @@ private struct PeriodChart: View {
                     Text(shown.live ? shown.label + " · so far" : shown.label)
                         .font(.footnote.weight(.medium)).foregroundStyle(.secondary)
                     HStack(spacing: 0) {
-                        value("Solar", shown.solar, .solarMark)
-                        value("Grid", shown.grid, .gridMark)
-                        value("Load", shown.load, nil)
+                        value(.solar, shown.solar)
+                        value(.grid, shown.grid)
+                        value(.load, shown.load)
+                        if shown.export > 0 { value(.export, shown.export) }
                     }
                 }
             }
@@ -190,13 +193,11 @@ private struct PeriodChart: View {
         return period.id != shown.id
     }
 
-    private func value(_ name: String, _ kWh: Double, _ mark: Color?) -> some View {
+    private func value(_ source: EnergySource, _ kWh: Double) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
-                Circle().fill(mark ?? .clear)
-                    .overlay { if mark == nil { Circle().stroke(.secondary, lineWidth: 1.5) } }
-                    .frame(width: 8, height: 8)
-                Text(name).font(.caption).foregroundStyle(.secondary)
+                SourceIcon(source: source, size: 12)
+                Text(source.name).font(.caption).foregroundStyle(.secondary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(PowerFormat.kWhNumber(kWh)).font(.headline).monospacedDigit()
@@ -212,51 +213,57 @@ private struct PeriodChart: View {
 private struct PeriodList: View {
     let periods: [Period]
 
+    /// An Export figure on each row once any period has some; a model that cannot export never shows it.
+    private var showsExport: Bool { periods.contains { $0.export > 0 } }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                column("Solar", .solarMark)
-                column("Grid", .gridMark)
-                column("Load", nil)
-            }
-            .font(.caption.weight(.medium)).foregroundStyle(.secondary)
-            .padding(.bottom, 6)
-
             ForEach(Array(periods.enumerated()), id: \.element.id) { index, period in
-                if index > 0 { Divider() }
+                if index > 0 { Divider().padding(.leading, 16) }
                 row(period)
             }
         }
-        .padding(16)
         .phoneCard()
     }
 
-    private func column(_ name: String, _ mark: Color?) -> some View {
-        HStack(spacing: 4) {
-            if let mark { Circle().fill(mark).frame(width: 6, height: 6) }
-            Text(name)
-        }
-        .frame(width: 58, alignment: .trailing)
-    }
-
+    /// The day, its solar and grid (and export) under it, and the energy used on the right.
     private func row(_ period: Period) -> some View {
-        HStack(spacing: 8) {
-            Text(period.label).font(.body).lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            number(period.solar)
-            number(period.grid)
-            number(period.load).fontWeight(.semibold)
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(period.label).font(.body.weight(.medium)).lineLimit(1)
+                    if period.live {
+                        Text("So far")
+                            .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.12), in: Capsule())
+                    }
+                }
+                HStack(spacing: 12) {
+                    source(.solar, period.solar)
+                    source(.grid, period.grid)
+                    if showsExport { source(.export, period.export) }
+                }
+                .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(PowerFormat.kWhNumber(period.load))
+                    .font(.title3.weight(.semibold)).monospacedDigit()
+                    .foregroundStyle(period.live ? .secondary : .primary)
+                Text("kWh used").font(.caption).foregroundStyle(.secondary)
+            }
         }
-        .foregroundStyle(period.live ? .secondary : .primary)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16).padding(.vertical, 12)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(period.label)\(period.live ? ", so far" : ""): solar \(PowerFormat.kWh(period.solar)), grid \(PowerFormat.kWh(period.grid)), load \(PowerFormat.kWh(period.load))")
+        .accessibilityLabel("\(period.label)\(period.live ? ", so far" : ""): solar \(PowerFormat.kWh(period.solar)), grid \(PowerFormat.kWh(period.grid)), \(showsExport ? "export \(PowerFormat.kWh(period.export)), " : "")used \(PowerFormat.kWh(period.load))")
     }
 
-    private func number(_ kWh: Double) -> some View {
-        Text(PowerFormat.kWhNumber(kWh)).font(.body).monospacedDigit()
-            .frame(width: 58, alignment: .trailing)
+    private func source(_ source: EnergySource, _ kWh: Double) -> some View {
+        HStack(spacing: 5) {
+            SourceIcon(source: source, size: 13)
+            Text(PowerFormat.kWhNumber(kWh)).monospacedDigit()
+        }
     }
 }
 #endif
