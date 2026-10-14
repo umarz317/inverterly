@@ -174,7 +174,7 @@ fun PowerChart(curve: DayCurve, selection: Instant?, onSelect: (Instant?) -> Uni
     Column(modifier) {
         Readout(
             title = (if (selection == null) "Latest · " else "") + clockTime(shown.time),
-            items = listOf(Triple("Solar", shown.pvW, tones.solar), Triple("Grid", shown.gridW, tones.grid), Triple("Load", shown.loadW, ink)),
+            items = listOf(EnergySource.Solar to shown.pvW, EnergySource.Grid to shown.gridW, EnergySource.Load to shown.loadW),
         )
         val description = "Chart of today's solar, grid and load power"
         androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
@@ -285,21 +285,19 @@ fun BatteryChart(curve: DayCurve, selection: Instant?, onSelect: (Instant?) -> U
 
 /** The moment shown and each series' power at it; the coloured marks double as the legend. */
 @Composable
-private fun Readout(title: String, items: List<Triple<String, Double, Color>>) {
+private fun Readout(title: String, items: List<Pair<EnergySource, Double>>) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
         androidx.compose.material3.Text(title, style = MaterialTheme.typography.labelLarge, color = secondary)
         androidx.compose.foundation.layout.Row {
-            for ((name, watts, mark) in items) {
+            for ((source, watts) in items) {
                 Column(Modifier.weight(1f)) {
                     androidx.compose.foundation.layout.Row(
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(5.dp),
                     ) {
-                        androidx.compose.foundation.layout.Box(
-                            Modifier.height(3.dp).width(12.dp).background(mark, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)),
-                        )
-                        androidx.compose.material3.Text(name, style = MaterialTheme.typography.labelMedium, color = secondary)
+                        SourceIcon(source, 14.dp)
+                        androidx.compose.material3.Text(source.title, style = MaterialTheme.typography.labelMedium, color = secondary)
                     }
                     androidx.compose.material3.Text(com.loopbreak.inverterly.core.PowerFormat.watts(watts), style = MaterialTheme.typography.titleMedium)
                 }
@@ -348,10 +346,10 @@ fun PeriodChart(periods: List<Period>, byDay: Boolean, selection: Period?, onSel
             androidx.compose.material3.Text(if (shown.live) shown.label + " · so far" else shown.label,
                 style = MaterialTheme.typography.labelLarge, color = axis)
             androidx.compose.foundation.layout.Row {
-                KwhValue("Solar", shown.solar, tones.solar, Modifier.weight(1f))
-                KwhValue("Grid", shown.grid, tones.grid, Modifier.weight(1f))
-                KwhValue("Load", shown.load, null, Modifier.weight(1f))
-                if (shown.export > 0) KwhValue("Export", shown.export, tones.battery, Modifier.weight(1f))
+                KwhValue(EnergySource.Solar, shown.solar, Modifier.weight(1f))
+                KwhValue(EnergySource.Grid, shown.grid, Modifier.weight(1f))
+                KwhValue(EnergySource.Load, shown.load, Modifier.weight(1f))
+                if (shown.export > 0) KwhValue(EnergySource.Export, shown.export, Modifier.weight(1f))
             }
         }
         androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
@@ -397,20 +395,15 @@ fun PeriodChart(periods: List<Period>, byDay: Boolean, selection: Period?, onSel
 }
 
 @Composable
-private fun KwhValue(name: String, kWh: Double, mark: Color?, modifier: Modifier) {
+private fun KwhValue(source: EnergySource, kWh: Double, modifier: Modifier) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     Column(modifier) {
         androidx.compose.foundation.layout.Row(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(5.dp),
         ) {
-            androidx.compose.foundation.layout.Box(
-                Modifier.size(8.dp).let {
-                    if (mark != null) it.background(mark, androidx.compose.foundation.shape.CircleShape)
-                    else it.border(1.5.dp, secondary, androidx.compose.foundation.shape.CircleShape)
-                },
-            )
-            androidx.compose.material3.Text(name, style = MaterialTheme.typography.labelMedium, color = secondary)
+            SourceIcon(source, 14.dp)
+            androidx.compose.material3.Text(source.title, style = MaterialTheme.typography.labelMedium, color = secondary)
         }
         androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.Bottom) {
             androidx.compose.material3.Text(com.loopbreak.inverterly.core.PowerFormat.kWhNumber(kWh), style = MaterialTheme.typography.titleMedium)

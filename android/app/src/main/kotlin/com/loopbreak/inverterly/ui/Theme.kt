@@ -39,6 +39,8 @@ class Marks(
     val warning: Color,
     val card: Color,
     val secondary: Color,
+    /** The grid's plug icon: the system blue, where the grid's bars and lines stay grey. */
+    val gridIcon: Color = Color(0xFF007AFF),
 )
 
 val LocalMarks = staticCompositionLocalOf {
@@ -53,6 +55,7 @@ private val LightMarks = Marks(
 private val DarkMarks = Marks(
     solar = Color(0xFFFF9F0A), grid = Color(0xFF8E8E93), battery = Color(0xFF30D158),
     alert = Color(0xFFFF453A), warning = Color(0xFFFF9F0A), card = Color(0xFF1C1C1E), secondary = Color(0x99EBEBF5),
+    gridIcon = Color(0xFF0A84FF),
 )
 
 private val LightColors = lightColorScheme(

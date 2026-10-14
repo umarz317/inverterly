@@ -509,21 +509,21 @@ private fun MixSummary(solarKWh: Double, gridKWh: Double, loadKWh: Double, expor
             if (gridKWh > 0) Box(Modifier.weight((1 - share).toFloat().coerceAtLeast(0.02f)).fillMaxSize().background(tones.grid))
         }
         Row {
-            Total("Solar", solarKWh, tones.solar, Modifier.weight(1f))
-            Total("Grid", gridKWh, tones.grid, Modifier.weight(1f))
-            Total("Load", loadKWh, null, Modifier.weight(1f))
-            if (exportKWh > 0) Total("Export", exportKWh, tones.battery, Modifier.weight(1f))
+            Total(EnergySource.Solar, solarKWh, Modifier.weight(1f))
+            Total(EnergySource.Grid, gridKWh, Modifier.weight(1f))
+            Total(EnergySource.Load, loadKWh, Modifier.weight(1f))
+            if (exportKWh > 0) Total(EnergySource.Export, exportKWh, Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun Total(name: String, kWh: Double, mark: Color?, modifier: Modifier) {
+private fun Total(source: EnergySource, kWh: Double, modifier: Modifier) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            if (mark != null) Box(Modifier.size(7.dp).background(mark, CircleShape))
-            Text(name, style = MaterialTheme.typography.labelMedium, color = secondary)
+            SourceIcon(source, 14.dp)
+            Text(source.title, style = MaterialTheme.typography.labelMedium, color = secondary)
         }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(PowerFormat.kWhNumber(kWh), style = MaterialTheme.typography.titleMedium)
@@ -612,10 +612,10 @@ private fun PeriodList(periods: List<Period>) {
     PhoneCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.weight(1f))
-            ListColumn("Solar", tones.solar)
-            ListColumn("Grid", tones.grid)
-            ListColumn("Load", null)
-            if (showExport) ListColumn("Export", tones.battery)
+            ListColumn(EnergySource.Solar)
+            ListColumn(EnergySource.Grid)
+            ListColumn(EnergySource.Load)
+            if (showExport) ListColumn(EnergySource.Export)
         }
         periods.forEachIndexed { index, period ->
             if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -639,10 +639,10 @@ private fun PeriodList(periods: List<Period>) {
 }
 
 @Composable
-private fun ListColumn(name: String, mark: Color?) {
-    Row(Modifier.width(58.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End)) {
-        if (mark != null) Box(Modifier.size(6.dp).background(mark, CircleShape))
-        Text(name, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun ListColumn(source: EnergySource) {
+    Row(Modifier.width(58.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.End)) {
+        SourceIcon(source, 12.dp)
+        Text(source.title, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
